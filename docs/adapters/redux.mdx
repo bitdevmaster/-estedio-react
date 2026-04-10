@@ -1,0 +1,216 @@
+---
+title: "Redux Adapter"
+description: "Use @estedio/react with Redux Toolkit and Redux Saga for full-featured side-effect control."
+---
+
+## Installation
+
+```bash
+npm install @estedio/react axios @reduxjs/toolkit react-redux redux-saga
+```
+
+## Setup
+
+The Redux adapter requires four steps: creating resources, adding a provider, creating typed hooks, and using them in components.
+
+### 1. Create resources and store
+
+```ts
+// store.ts
+import { createResources, localStorageAdapter } from "@estedio/react/redux";
+import { resources } from "./resources";
+
+export const { makeStore, slices } = createResources(resources, {
+  storageByResource: {
+    // Persist the GetUsers response to localStorage
+    GetUsers: localStorageAdapter,
+  },
+});
+```
+
+`createResources` returns:
+
+- **`makeStore`** — a factory function that creates the Redux store instance (passed to `StoreProvider`)
+- **`slices`** — a map of `ResourceSlice` objects, one per resource (passed to `createResourceHooks`)
+
+### 2. Add StoreProvider
+
+Wrap your application (or the relevant subtree) with `StoreProvider`:
+
+```tsx
+// providers.tsx
+"use client";
+import type { ReactNode } from "react";
+import { StoreProvider } from "@estedio/react/redux";
+import { makeStore } from "./store";
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  return (
+    <StoreProvider
+      makeStore={makeStore}
+      provider={{ apiBaseUrl: "https://api.example.com" }}
+    >
+      {children}
+    </StoreProvider>
+  );
+}
+```
+
+<Note>
+  `StoreProvider` internally calls `initializeLibConfig` with the `provider`
+  values you pass, so you do not need to call it separately.
+</Note>
+
+### 3. Create typed hooks
+
+`createResourceHooks` binds your `ResourceTypeMap` to the slices so all hook calls are fully typed:
+
+```ts
+// hooks.ts
+"use client";
+import { createResourceHooks } from "@estedio/react/redux";
+import { slices } from "./store";
+import type { ResourceTypeMap } from "./resources";
+
+export const { useResourceDispatch, useResourceSelector } =
+  createResourceHooks<ResourceTypeMap>(slices);
+```
+
+### 4. Use in components
+
+```tsx
+"use client";
+import { useResourceDispatch, useResourceSelector } from "./hooks";
+
+export function UserList() {
+  const dispatch = useResourceDispatch();
+  const { result, loading, error } = useResourceSelector("GetUsers");
+
+  return (
+    <>
+      <button onClick={() => dispatch({ resource: "GetUsers", force: false })}>
+        Load users
+      </button>
+      {loading && <p>Loading...</p>}
+      {error && <p>Error: {error}</p>}
+      <ul>
+        {result?.map((user) => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+## Dispatching with payload
+
+For resources that require a payload (e.g. path params or request body), pass the payload in the dispatch call:
+
+```ts
+// GET /users/:userId
+dispatch({ resource: "GetUserById", payload: { userId: 42 } });
+
+// POST /users
+dispatch({
+  resource: "CreateUser",
+  payload: { name: "Alice", email: "alice@example.com" },
+});
+```
+
+## force flag
+
+The `force` flag controls whether a cached result is reused:
+
+| Value   | Behaviour                                                          |
+| ------- | ------------------------------------------------------------------ |
+| `false` | Skip the API call if a non-null result already exists in the store |
+| `true`  | Always make the API call, even if a result exists                  |
+
+```ts
+dispatch({ resource: "GetUsers", force: true }); // always refetch
+dispatch({ resource: "GetUsers", force: false }); // use cache if available
+```
+
+## Saga effects
+
+The Redux adapter uses Redux Saga under the hood. You can control the saga effect per resource using `sagaEffect` in the resource config:
+
+| Effect                   | Behaviour                                               |
+| ------------------------ | ------------------------------------------------------- |
+| `"takeLatest"` (default) | Cancels any in-flight saga and runs the latest dispatch |
+| `"takeEvery"`            | Runs a new saga for every dispatch in parallel          |
+
+```ts
+const resources = {
+  GetUsers: {
+    endpoint: "/users",
+    method: "GET",
+    authenticated: true,
+    sagaEffect: "takeLatest", // default
+  },
+  TrackEvent: {
+    endpoint: "/events",
+    method: "POST",
+    authenticated: true,
+    sagaEffect: "takeEvery", // fire-and-forget, don't cancel previous
+  },
+};
+```
+
+## Persistence
+
+Enable response persistence per resource using the `storageByResource` option:
+
+```ts
+export const { makeStore, slices } = createResources(resources, {
+  storageByResource: {
+    GetUsers: localStorageAdapter, // persist to localStorage
+    GetProfile: sessionStorageAdapter, // persist to sessionStorage
+  },
+});
+```
+
+The persisted value is loaded back into the store on hydration. On the next dispatch with `force: false`, the cached value is returned without an API call.
+
+You can also configure persistence inline on the resource config using `meta.persist` and `meta.persistKey`:
+
+```ts
+const GetUsers: ResourceConfig = {
+  endpoint: "/users",
+  method: "GET",
+  authenticated: true,
+  meta: {
+    persist: true,
+    persistKey: "users_cache",
+  },
+};
+```
+
+## Auth resources
+
+Mark a resource as `meta.isAuthResource: true` to automatically save the `access_token` and `refresh_token` from the response into storage when the request succeeds:
+
+```ts
+const Login: ResourceConfig = {
+  endpoint: "/auth/login",
+  method: "POST",
+  authenticated: false,
+  meta: {
+    persist: true,
+    persistKey: "auth",
+    isAuthResource: true,
+  },
+};
+```
+
+## Advanced: RootStateFromResources
+
+For accessing the full Redux state type outside of hooks:
+
+```ts
+import type { RootStateFromResources } from "@estedio/react/redux";
+import type { ResourceTypeMap } from "./resources";
+
+type AppState = RootStateFromResources<ResourceTypeMap>;
+```

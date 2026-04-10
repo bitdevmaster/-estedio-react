@@ -1,0 +1,128 @@
+---
+title: "Zustand Adapter"
+description: "Use @estedio/react with Zustand for lightweight, zero-provider resource stores."
+---
+
+## Installation
+
+```bash
+npm install @estedio/react axios zustand
+```
+
+## Setup
+
+The Zustand adapter requires no provider — just create resources, generate hooks, and use them.
+
+### 1. Create resources and hooks
+
+```ts
+// store.ts
+"use client";
+import {
+  createResources,
+  createResourceHooks,
+  localStorageAdapter,
+} from "@estedio/react/zustand";
+import { resources } from "./resources";
+import type { ResourceTypeMap } from "./resources";
+
+const { stores } = createResources<ResourceTypeMap>(resources, {
+  storageByResource: {
+    GetUsers: localStorageAdapter,
+  },
+});
+
+export const { useResourceDispatch, useResourceSelector } =
+  createResourceHooks<ResourceTypeMap>(stores);
+```
+
+`createResources` returns:
+
+- **`stores`** — a map of Zustand stores, one per resource (passed to `createResourceHooks`)
+
+### 2. Use in components
+
+```tsx
+"use client";
+import { useResourceDispatch, useResourceSelector } from "./store";
+
+export function UserList() {
+  const dispatch = useResourceDispatch();
+  const { result, loading, error } = useResourceSelector("GetUsers");
+
+  return (
+    <>
+      <button onClick={() => dispatch({ resource: "GetUsers", force: false })}>
+        Load users
+      </button>
+      {loading && <p>Loading...</p>}
+      {error && <p>Error: {error}</p>}
+      <ul>
+        {result?.map((user) => (
+          <li key={user.id}>{user.name}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+## Dispatching with payload
+
+```ts
+// Path param
+dispatch({ resource: "GetUserById", payload: { userId: 42 } });
+
+// Request body
+dispatch({
+  resource: "CreateUser",
+  payload: { name: "Alice", email: "alice@example.com" },
+});
+```
+
+## force flag
+
+| Value   | Behaviour                                               |
+| ------- | ------------------------------------------------------- |
+| `false` | Skip the fetch if a non-null result exists in the store |
+| `true`  | Always fetch, even if a result exists                   |
+
+```ts
+dispatch({ resource: "GetUsers", force: true });
+```
+
+## Persistence
+
+Pass a storage adapter per resource in `storageByResource`:
+
+```ts
+const { stores } = createResources<ResourceTypeMap>(resources, {
+  storageByResource: {
+    GetUsers: localStorageAdapter,
+    GetProfile: sessionStorageAdapter,
+  },
+});
+```
+
+The persisted value is rehydrated into the Zustand store on the first render.
+
+## No provider required
+
+Unlike the Redux adapter, the Zustand adapter does not require a React context provider. Each resource is backed by its own independent Zustand store and can be used anywhere in the component tree without wrapping.
+
+<Note>
+  If you use the `force: false` cache check across multiple components, they
+  share the same Zustand store instance, so results are automatically
+  synchronized.
+</Note>
+
+## Advanced: ResourceStoresFromTypeMap
+
+For typing the `stores` map outside of the factory function:
+
+```ts
+import type { ResourceStoresFromTypeMap } from "@estedio/react/zustand";
+import type { ResourceTypeMap } from "./resources";
+
+type AppStores = ResourceStoresFromTypeMap<ResourceTypeMap>;
+```

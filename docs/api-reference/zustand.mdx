@@ -1,0 +1,129 @@
+---
+title: "Zustand API Reference"
+description: "Full reference for all exports from @estedio/react/zustand."
+---
+
+<Note>
+  All [Core exports](/api-reference/core) — config helpers, entity types, ports,
+  HTTP, and storage — are also re-exported from `@estedio/react/zustand`.
+</Note>
+
+## createResources
+
+```ts
+function createResources<TResourceMap>(
+  resources: Record<keyof TResourceMap, ResourceConfig>,
+  options?: CreateResourcesOptions,
+): {
+  stores: ResourceStoresFromTypeMap<TResourceMap>;
+};
+```
+
+The main factory function for the Zustand adapter. Creates one Zustand store per resource.
+
+### CreateResourcesOptions
+
+```ts
+interface CreateResourcesOptions {
+  storageByResource?: Partial<Record<string, IStoragePort>>;
+}
+```
+
+| Option              | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `storageByResource` | Map resource names to a storage adapter for response persistence |
+
+---
+
+## createResourceHooks
+
+```ts
+function createResourceHooks<TResourceMap>(
+  stores: ResourceStoresFromTypeMap<TResourceMap>,
+): {
+  useResourceDispatch: () => ResourceDispatchFn<TResourceMap>;
+  useResourceSelector: <K extends keyof TResourceMap>(
+    resource: K,
+  ) => ResourceState<TResourceMap[K]["response"]>;
+};
+```
+
+Generates typed `useResourceDispatch` and `useResourceSelector` hooks bound to your `ResourceTypeMap`.
+
+---
+
+## useResourceSelector
+
+Returns the current `ResourceState` for a named resource from its Zustand store:
+
+```ts
+const { result, loading, error } = useResourceSelector("GetUsers");
+```
+
+---
+
+## useResourceDispatch
+
+Returns a typed dispatch function:
+
+```ts
+const dispatch = useResourceDispatch();
+dispatch({ resource: "GetUsers", force: false });
+dispatch({ resource: "GetUserById", payload: { userId: 42 } });
+```
+
+### ResourceDispatchParams
+
+```ts
+interface ResourceDispatchParams<TResourceMap, K extends keyof TResourceMap> {
+  resource: K;
+  payload?: TResourceMap[K]["payload"];
+  force?: boolean;
+}
+```
+
+---
+
+## createResourceStore
+
+```ts
+function createResourceStore(
+  resourceName: string,
+  config: ResourceConfig,
+  adapter: IApiPort,
+  storage?: IStoragePort,
+): StoreApi<ResourceStoreState>;
+```
+
+Low-level factory for creating a single Zustand store for a resource. Used internally by `createResources`.
+
+### ResourceStoreState
+
+```ts
+interface ResourceStoreState<T = unknown> extends ResourceState<T> {
+  dispatch: (params: { payload?: unknown; force?: boolean }) => Promise<void>;
+}
+```
+
+---
+
+## Types
+
+### ResourceStoresFromTypeMap
+
+Infers the stores map type from your resource type map:
+
+```ts
+import type { ResourceStoresFromTypeMap } from "@estedio/react/zustand";
+import type { ResourceTypeMap } from "./resources";
+
+type AppStores = ResourceStoresFromTypeMap<ResourceTypeMap>;
+```
+
+### FetchCallback
+
+Internal async fetch function type used inside each store:
+
+```ts
+type FetchCallback = (payload?: unknown) => Promise<unknown>;
+```

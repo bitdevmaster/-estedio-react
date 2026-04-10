@@ -1,0 +1,185 @@
+---
+title: "Redux API Reference"
+description: "Full reference for all exports from @estedio/react/redux."
+---
+
+<Note>
+  All [Core exports](/api-reference/core) — config helpers, entity types, ports,
+  HTTP, and storage — are also re-exported from `@estedio/react/redux`.
+</Note>
+
+## createResources
+
+```ts
+function createResources<TResourceMap>(
+  resources: Record<keyof TResourceMap, ResourceConfig>,
+  options?: CreateResourcesOptions,
+): {
+  makeStore: () => EnhancedStore;
+  slices: Record<keyof TResourceMap, ResourceSlice>;
+};
+```
+
+The main factory function for the Redux adapter. Creates a Redux store factory and a slice map from your resource definitions.
+
+### CreateResourcesOptions
+
+```ts
+interface CreateResourcesOptions {
+  storageByResource?: Partial<Record<string, IStoragePort>>;
+}
+```
+
+| Option              | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `storageByResource` | Map resource names to a storage adapter for response persistence |
+
+---
+
+## StoreProvider
+
+```tsx
+<StoreProvider makeStore={makeStore} provider={providerConfig}>
+  {children}
+</StoreProvider>
+```
+
+React context provider that creates the Redux store and makes it available to hooks. Also calls `initializeLibConfig` with the `provider` values.
+
+| Prop        | Type                     | Description                                   |
+| ----------- | ------------------------ | --------------------------------------------- |
+| `makeStore` | `() => EnhancedStore`    | Store factory from `createResources`          |
+| `provider`  | `Partial<LibraryConfig>` | Config values passed to `initializeLibConfig` |
+| `children`  | `ReactNode`              | Child components                              |
+
+---
+
+## createResourceHooks
+
+```ts
+function createResourceHooks<TResourceMap>(
+  slices: Record<keyof TResourceMap, ResourceSlice>,
+): {
+  useResourceDispatch: () => ResourceDispatchFn<TResourceMap>;
+  useResourceSelector: <K extends keyof TResourceMap>(
+    resource: K,
+  ) => ResourceState<TResourceMap[K]["response"]>;
+};
+```
+
+Generates typed `useResourceDispatch` and `useResourceSelector` hooks bound to your `ResourceTypeMap`.
+
+---
+
+## useResourceSelector
+
+```ts
+function useResourceSelector<K extends keyof TResourceMap>(
+  resource: K,
+): ResourceState<TResourceMap[K]["response"]>;
+```
+
+Returns the current `ResourceState` for the named resource from the Redux store.
+
+```ts
+const { result, loading, error } = useResourceSelector("GetUsers");
+```
+
+---
+
+## useResourceDispatch
+
+Returns a typed dispatch function:
+
+```ts
+const dispatch = useResourceDispatch();
+dispatch({ resource: "GetUsers", force: false });
+dispatch({ resource: "GetUserById", payload: { userId: 42 } });
+```
+
+### ResourceDispatchParams
+
+```ts
+interface ResourceDispatchParams<TResourceMap, K extends keyof TResourceMap> {
+  resource: K;
+  payload?: TResourceMap[K]["payload"];
+  force?: boolean;
+}
+```
+
+---
+
+## createResourceSlice
+
+```ts
+function createResourceSlice(
+  resourceName: string,
+  options?: { initialState?: ResourceState },
+): ResourceSlice;
+```
+
+Low-level factory for creating a single Redux Toolkit slice for a resource. Used internally by `createResources`. Useful for advanced store customization.
+
+### ResourceSlice
+
+```ts
+interface ResourceSlice {
+  name: string;
+  reducer: Reducer<ResourceState>;
+  actions: {
+    request: ActionCreator;
+    success: ActionCreator;
+    failure: ActionCreator;
+    reset: ActionCreator;
+  };
+}
+```
+
+---
+
+## createResourceSaga
+
+```ts
+function createResourceSaga(
+  resourceName: string,
+  config: ResourceConfig,
+  adapter: IApiPort,
+): () => Generator;
+```
+
+Low-level factory for creating a Redux Saga watcher for a resource. Used internally by `createResources`.
+
+---
+
+## Types
+
+### RootStateFromResources
+
+Infers the full Redux state type from your resource type map:
+
+```ts
+import type { RootStateFromResources } from "@estedio/react/redux";
+import type { ResourceTypeMap } from "./resources";
+
+type AppState = RootStateFromResources<ResourceTypeMap>;
+```
+
+### FetchPayload
+
+Internal saga action payload type:
+
+```ts
+interface FetchPayload {
+  resource: string;
+  payload?: unknown;
+  force?: boolean;
+}
+```
+
+### RootSagaDependencies
+
+```ts
+interface RootSagaDependencies {
+  adapter: IApiPort;
+}
+```

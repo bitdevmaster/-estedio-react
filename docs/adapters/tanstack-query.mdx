@@ -1,0 +1,187 @@
+---
+title: "TanStack Query Adapter"
+description: "Use @estedio/react with TanStack Query v5 for cache-first, server-state resource management."
+---
+
+## Installation
+
+```bash
+npm install @estedio/react axios @tanstack/react-query
+```
+
+## Setup
+
+The TanStack Query adapter uses the existing `QueryClient` from your app. Wrap with `QueryClientProvider` as usual, then use the generated hooks.
+
+### 1. Create resources
+
+```ts
+// resources.ts
+import { createResources } from "@estedio/react/tanstack-query";
+import { resources } from "./resources";
+import type { ResourceTypeMap } from "./resources";
+
+export const { useResourceQuery, useResourceMutation } =
+  createResources<ResourceTypeMap>(resources);
+```
+
+### 2. Add QueryClientProvider
+
+```tsx
+// providers.tsx
+"use client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+const queryClient = new QueryClient();
+
+export function AppProvider({ children }: { children: React.ReactNode }) {
+  return (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+}
+```
+
+### 3. Fetch data with useResourceQuery
+
+```tsx
+"use client";
+import { useResourceQuery } from "./resources";
+
+export function UserList() {
+  const { result, loading, error } = useResourceQuery({
+    resource: "GetUsers",
+    force: false,
+  });
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error}</p>;
+
+  return (
+    <ul>
+      {result?.map((user) => (
+        <li key={user.id}>{user.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### 4. Mutate data with useResourceMutation
+
+```tsx
+"use client";
+import { useResourceMutation } from "./resources";
+
+export function CreateUserButton() {
+  const createUser = useResourceMutation("CreateUser");
+
+  return (
+    <button
+      onClick={() =>
+        createUser.dispatch({ name: "Alice", email: "alice@example.com" })
+      }
+    >
+      Create user
+    </button>
+  );
+}
+```
+
+## useResourceQuery
+
+`useResourceQuery` wraps TanStack Query's `useQuery` and returns the standard `ResourceState<T>` shape:
+
+```ts
+const { result, loading, error } = useResourceQuery({
+  resource: "GetUsers",
+  force: false,
+});
+```
+
+| Option     | Type                            | Description                                      |
+| ---------- | ------------------------------- | ------------------------------------------------ |
+| `resource` | `keyof ResourceTypeMap`         | The resource name to fetch                       |
+| `force`    | `boolean`                       | `true` to bypass the query cache                 |
+| `payload`  | Inferred from `ResourceTypeMap` | Optional payload for path params or request body |
+
+The returned `QueryResourceResult<T>` object:
+
+| Field     | Type             | Description                         |
+| --------- | ---------------- | ----------------------------------- |
+| `result`  | `T \| null`      | API response data                   |
+| `loading` | `boolean`        | `true` while the query is in flight |
+| `error`   | `string \| null` | Error message if the query failed   |
+
+## useResourceMutation
+
+`useResourceMutation` wraps TanStack Query's `useMutation` and returns a `dispatch` function with the standard `ResourceState<T>` shape:
+
+```ts
+const { dispatch, result, loading, error } = useResourceMutation("CreateUser");
+```
+
+The returned `MutationResourceResult<T>` object:
+
+| Field      | Type                          | Description                            |
+| ---------- | ----------------------------- | -------------------------------------- |
+| `dispatch` | `(payload: TPayload) => void` | Triggers the mutation                  |
+| `result`   | `T \| null`                   | Last successful mutation response      |
+| `loading`  | `boolean`                     | `true` while the mutation is in flight |
+| `error`    | `string \| null`              | Error message if the mutation failed   |
+
+## Using both in the same component
+
+```tsx
+"use client";
+import { useResourceQuery, useResourceMutation } from "./resources";
+
+export function UsersPage() {
+  const {
+    result: users,
+    loading,
+    error,
+  } = useResourceQuery({
+    resource: "GetUsers",
+    force: false,
+  });
+  const createUser = useResourceMutation("CreateUser");
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p>Error: {error}</p>;
+
+  return (
+    <>
+      <button
+        onClick={() =>
+          createUser.dispatch({ name: "Bob", email: "bob@example.com" })
+        }
+      >
+        Add user
+      </button>
+      <ul>
+        {users?.map((u) => (
+          <li key={u.id}>{u.name}</li>
+        ))}
+      </ul>
+    </>
+  );
+}
+```
+
+## Path parameters
+
+The adapter uses the same path-param interpolation as all other adapters. Pass `userId` in the payload for an endpoint like `/users/:userId`:
+
+```ts
+const { result } = useResourceQuery({
+  resource: "GetUserById",
+  payload: { userId: 42 },
+  force: false,
+});
+```
+
+## Notes
+
+- The TanStack Query adapter does **not** support `meta.persist` — use TanStack Query's built-in `staleTime` and `gcTime` for caching control.
+- Auth token auto-save (`meta.isAuthResource`) is not available in this adapter. Use the Redux or Zustand adapters for auth flows.
+- `sagaEffect` is a Redux-only field and is ignored by this adapter.

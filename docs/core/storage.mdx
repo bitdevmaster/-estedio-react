@@ -1,0 +1,142 @@
+---
+title: "Storage"
+description: "Encrypted localStorage and sessionStorage adapters, the IStoragePort interface, and how persistence works."
+---
+
+## Overview
+
+`@estedio/react` includes two browser storage adapters with transparent AES-GCM encryption:
+
+| Adapter                 | Singleton               | Storage                 |
+| ----------------------- | ----------------------- | ----------------------- |
+| `LocalStorageAdapter`   | `localStorageAdapter`   | `window.localStorage`   |
+| `SessionStorageAdapter` | `sessionStorageAdapter` | `window.sessionStorage` |
+
+Both implement `IStoragePort` and can be used interchangeably.
+
+<Warning>
+  Browser storage is accessible to JavaScript running on the page. Set a strong,
+  unpredictable `storageSecret` in `LibraryConfig` and prefer `httpOnly` cookies
+  for highly sensitive token storage in production.
+</Warning>
+
+## IStoragePort
+
+The port interface both adapters implement:
+
+```ts
+interface IStoragePort {
+  getAsync(key: string): Promise<string | null>;
+  setAsync(key: string, value: string): Promise<void>;
+  remove(key: string): void;
+  clear(): void;
+}
+```
+
+You can supply any object that satisfies `IStoragePort` wherever a storage adapter is accepted.
+
+## Using storage adapters directly
+
+```ts
+import {
+  localStorageAdapter,
+  sessionStorageAdapter,
+} from "@estedio/react/redux"; // or /zustand or /tanstack-query
+
+// Write
+await localStorageAdapter.setAsync("my_key", "my_value");
+
+// Read
+const value = await localStorageAdapter.getAsync("my_key"); // string | null
+
+// Remove one key
+localStorageAdapter.remove("my_key");
+
+// Clear everything
+localStorageAdapter.clear();
+```
+
+Values are automatically encrypted before writing and decrypted on read. The `storageSecret` from `LibraryConfig` is used as the AES-GCM key. If decryption fails (e.g. the secret changed), `getAsync` returns `null` instead of throwing.
+
+## Persisting resource responses
+
+Enable persistence in the resource config using `meta.persist` and `meta.persistKey`:
+
+```ts
+const GetUsers: ResourceConfig = {
+  endpoint: "/users",
+  method: "GET",
+  authenticated: true,
+  meta: {
+    persist: true,
+    persistKey: "users_cache",
+  },
+};
+```
+
+Or map a storage adapter per resource in `createResources`:
+
+```ts
+import {
+  createResources,
+  localStorageAdapter,
+  sessionStorageAdapter,
+} from "@estedio/react/redux";
+
+const { makeStore, slices } = createResources(resources, {
+  storageByResource: {
+    GetUsers: localStorageAdapter,
+    GetProfile: sessionStorageAdapter,
+  },
+});
+```
+
+On the next render after a page reload, the stored value is rehydrated into the store. Dispatching with `force: false` returns the cached value without an API call.
+
+## Encryption details
+
+Storage values are encrypted using the [Web Crypto API](https://developer.mozilla.org/en-US/docs/Web/API/Web_Crypto_API) with AES-GCM:
+
+- A 256-bit key is derived from the `storageSecret` config value
+- A random 12-byte IV is generated per write
+- The IV is prepended to the ciphertext and stored as a Base64 string
+
+<Note>
+  Encryption is asynchronous. Use `await localStorageAdapter.getAsync(key)` and
+  `await localStorageAdapter.setAsync(key, value)`. The `remove` and `clear`
+  methods are synchronous.
+</Note>
+
+## SSR safety
+
+Both adapters check `typeof window === "undefined"` before accessing the browser's `Storage` API. All methods return `null` or silently no-op in server-side rendering environments.
+
+## Creating a custom storage adapter
+
+Implement `IStoragePort` to swap in any storage backend:
+
+```ts
+import type { IStoragePort } from "@estedio/react";
+
+class InMemoryStorage implements IStoragePort {
+  private store = new Map<string, string>();
+
+  async getAsync(key: string) {
+    return this.store.get(key) ?? null;
+  }
+
+  async setAsync(key: string, value: string) {
+    this.store.set(key, value);
+  }
+
+  remove(key: string) {
+    this.store.delete(key);
+  }
+
+  clear() {
+    this.store.clear();
+  }
+}
+
+export const inMemoryStorage = new InMemoryStorage();
+```

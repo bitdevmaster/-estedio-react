@@ -1,0 +1,133 @@
+---
+title: "Configuration"
+description: "Configure @estedio/react with LibraryConfig fields, environment variables, and the dataProvider helper."
+---
+
+## Overview
+
+All adapters share the same configuration layer. The library resolves config values in this priority order:
+
+1. Explicit overrides passed to `getLibConfig(overrides)`
+2. Values set via `initializeLibConfig(config)`
+3. Environment variables (see table below)
+4. Built-in defaults
+
+## initializeLibConfig
+
+Call this function once at application startup before any resource is fetched. It merges the provided values into the shared runtime config.
+
+```ts
+import { initializeLibConfig } from "@estedio/react/redux"; // any adapter
+
+initializeLibConfig({
+  apiBaseUrl: "https://api.example.com",
+  refreshEndpoint: "/auth/refresh",
+  accessTokenKey: "access_token",
+  refreshTokenKey: "refresh_token",
+  storageSecret: "replace-this-in-production",
+});
+```
+
+<Warning>
+  Set `storageSecret` to a strong random value before shipping to production.
+  This key encrypts all persisted data in `localStorage` and `sessionStorage`.
+</Warning>
+
+## LibraryConfig fields
+
+| Field             | Type     | Default                                   | Description                                            |
+| ----------------- | -------- | ----------------------------------------- | ------------------------------------------------------ |
+| `nodeEnv`         | `string` | `process.env.NODE_ENV \|\| "development"` | Current Node environment                               |
+| `apiBaseUrl`      | `string` | `""`                                      | Base URL prepended to all resource endpoints           |
+| `refreshEndpoint` | `string` | `"/auth/refresh"`                         | Endpoint used to refresh expired access tokens         |
+| `accessTokenKey`  | `string` | `"access_token"`                          | Storage key for the access token                       |
+| `refreshTokenKey` | `string` | `"refresh_token"`                         | Storage key for the refresh token                      |
+| `storageSecret`   | `string` | `""`                                      | AES-GCM encryption key for localStorage/sessionStorage |
+
+## Environment variables
+
+The library reads the following environment variables automatically. `ESTEDIO_*` takes precedence over `NEXT_PUBLIC_*`.
+
+| Config field      | Env vars checked (in order)                                  |
+| ----------------- | ------------------------------------------------------------ |
+| `apiBaseUrl`      | `ESTEDIO_API_BASE_URL`, `NEXT_PUBLIC_API_BASE_URL`           |
+| `refreshEndpoint` | `ESTEDIO_REFRESH_ENDPOINT`, `NEXT_PUBLIC_REFRESH_ENDPOINT`   |
+| `accessTokenKey`  | `ESTEDIO_ACCESS_TOKEN_KEY`, `NEXT_PUBLIC_ACCESS_TOKEN_KEY`   |
+| `refreshTokenKey` | `ESTEDIO_REFRESH_TOKEN_KEY`, `NEXT_PUBLIC_REFRESH_TOKEN_KEY` |
+| `storageSecret`   | `ESTEDIO_STORAGE_SECRET`, `NEXT_PUBLIC_STORAGE_SECRET`       |
+
+Example `.env.local` for a Next.js app:
+
+```bash
+NEXT_PUBLIC_API_BASE_URL=https://api.example.com
+NEXT_PUBLIC_REFRESH_ENDPOINT=/auth/refresh
+NEXT_PUBLIC_ACCESS_TOKEN_KEY=access_token
+NEXT_PUBLIC_REFRESH_TOKEN_KEY=refresh_token
+NEXT_PUBLIC_STORAGE_SECRET=my-super-secret
+```
+
+<Note>
+  `nodeEnv` is always read from `process.env.NODE_ENV` and cannot be set via
+  `dataProvider`.
+</Note>
+
+## dataProvider helper
+
+`dataProvider` is a convenience function that maps a snake_case config object to `LibraryConfig`. This is useful for integrations that receive configuration in snake_case (e.g. from a server-side endpoint or CMS).
+
+```ts
+import { dataProvider, initializeLibConfig } from "@estedio/react/redux";
+
+const providerConfig = dataProvider({
+  base_url: "https://api.example.com",
+  refresh_endpoint: "/auth/refresh",
+  access_token_key: "access_token",
+  refresh_token_key: "refresh_token",
+  storage_secret: "replace-this-in-production",
+});
+
+initializeLibConfig(providerConfig);
+```
+
+### DataProviderConfig fields
+
+| Field               | Maps to           | Notes                                     |
+| ------------------- | ----------------- | ----------------------------------------- |
+| `base_url`          | `apiBaseUrl`      |                                           |
+| `refresh_endpoint`  | `refreshEndpoint` |                                           |
+| `access_token_key`  | `accessTokenKey`  | Preferred over deprecated `access_token`  |
+| `refresh_token_key` | `refreshTokenKey` | Preferred over deprecated `refresh_token` |
+| `storage_secret`    | `storageSecret`   |                                           |
+| `access_token`      | `accessTokenKey`  | **Deprecated** — use `access_token_key`   |
+| `refresh_token`     | `refreshTokenKey` | **Deprecated** — use `refresh_token_key`  |
+
+<Note>
+  `nodeEnv` is intentionally not part of `dataProvider` since it is always
+  inferred from `process.env.NODE_ENV`.
+</Note>
+
+## getLibConfig
+
+Returns the fully resolved `LibraryConfig`, merging runtime config, env vars, and any provided overrides.
+
+```ts
+import { getLibConfig } from "@estedio/react/redux";
+
+const config = getLibConfig();
+console.log(config.apiBaseUrl);
+
+// With per-call overrides:
+const config2 = getLibConfig({ apiBaseUrl: "https://staging-api.example.com" });
+```
+
+## resetLibConfig
+
+Clears all values previously set via `initializeLibConfig`. Primarily useful in tests.
+
+```ts
+import { resetLibConfig } from "@estedio/react/redux";
+
+afterEach(() => {
+  resetLibConfig();
+});
+```

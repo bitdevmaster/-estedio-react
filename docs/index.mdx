@@ -1,0 +1,77 @@
+---
+title: "Introduction"
+description: "Reusable hexagonal architecture utilities for resource-based data flows in React apps."
+---
+
+## What is @estedio/react?
+
+`@estedio/react` is a library that brings [hexagonal architecture](<https://en.wikipedia.org/wiki/Hexagonal_architecture_(software)>) patterns to React applications. It gives you a uniform, type-safe way to define API resources and connect them to whichever state management library your team already uses — Redux, Zustand, or TanStack Query — without changing how you define your resources.
+
+<CardGroup cols={2}>
+  <Card title="Quickstart" icon="rocket" href="/quickstart">
+    Install the library and make your first resource call in minutes.
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Configure the API base URL, auth tokens, and encrypted storage.
+  </Card>
+  <Card title="Adapter guides" icon="plug" href="/adapters/overview">
+    Choose between Redux, Zustand, and TanStack Query adapters.
+  </Card>
+  <Card title="API Reference" icon="brackets-curly" href="/api-reference/core">
+    Full reference for every exported function and type.
+  </Card>
+</CardGroup>
+
+## Core ideas
+
+### Resources are just config objects
+
+A resource is an object that describes an API endpoint — its URL, HTTP method, whether it needs authentication, and optionally how to persist its response in the browser.
+
+```ts
+const GetUsers: ResourceConfig<void, User[]> = {
+  endpoint: "/users",
+  method: "GET",
+  authenticated: true,
+};
+```
+
+You define all your resources once and pass them to an adapter-specific factory. From that point on, every hook, selector, and dispatch is fully typed.
+
+### Hexagonal architecture
+
+The library separates concerns into three layers:
+
+| Layer              | Responsibility                                                                   |
+| ------------------ | -------------------------------------------------------------------------------- |
+| **Core**           | `ResourceConfig`, `ResourceState`, ports (`IApiPort`, `IStoragePort`)            |
+| **Infrastructure** | HTTP client, encrypted storage adapters, token manager                           |
+| **Adapters**       | Redux, Zustand, TanStack Query — each wires the core to a concrete state library |
+
+Your application code only touches adapter hooks (`useResourceSelector`, `useResourceDispatch`, `useResourceQuery`). The infrastructure is hidden behind port interfaces.
+
+### One API, three adapters
+
+All three adapters expose a consistent `ResourceState<T>` shape:
+
+```ts
+type ResourceState<T> = {
+  result: T | null;
+  loading: boolean;
+  error: string | null;
+};
+```
+
+Switching state management libraries requires changing only the import path — your resource definitions stay the same.
+
+## Adapter comparison
+
+| Feature           | Redux                            | Zustand                  | TanStack Query                  |
+| ----------------- | -------------------------------- | ------------------------ | ------------------------------- |
+| Import path       | `@estedio/react/redux`           | `@estedio/react/zustand` | `@estedio/react/tanstack-query` |
+| State store       | Redux Toolkit slice              | Zustand store            | React Query cache               |
+| Side-effects      | Redux Saga                       | Internal async           | Built-in query/mutation         |
+| Provider required | `StoreProvider`                  | None                     | `QueryClientProvider`           |
+| Saga effects      | `takeLatest` / `takeEvery`       | —                        | —                               |
+| Persistence       | `meta.persist`                   | `meta.persist`           | —                               |
+| Best for          | Complex side-effects, large apps | Lightweight stores       | Server-state / cache-first      |

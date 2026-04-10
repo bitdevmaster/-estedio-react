@@ -1,0 +1,77 @@
+---
+title: "Adapter Overview"
+description: "Compare Redux, Zustand, and TanStack Query adapters and choose the right one for your application."
+---
+
+## All adapters, one interface
+
+Every adapter exposes the same `ResourceState<T>` shape regardless of which state library powers it underneath:
+
+```ts
+type ResourceState<T> = {
+  result: T | null;
+  loading: boolean;
+  error: string | null;
+};
+```
+
+Your resource definitions are written once and work with any adapter. Switching adapters means changing only the import path — your `resources.ts` file stays untouched.
+
+## Feature comparison
+
+|                        | Redux                             | Zustand                          | TanStack Query                   |
+| ---------------------- | --------------------------------- | -------------------------------- | -------------------------------- |
+| **Import path**        | `@estedio/react/redux`            | `@estedio/react/zustand`         | `@estedio/react/tanstack-query`  |
+| **Underlying library** | Redux Toolkit + Redux Saga        | Zustand                          | TanStack Query v5                |
+| **React provider**     | `StoreProvider` (required)        | None                             | `QueryClientProvider` (required) |
+| **Side-effect model**  | Saga (`takeLatest` / `takeEvery`) | Internal `async/await`           | Built-in query / mutation        |
+| **Persistence**        | `meta.persist` + storage adapter  | `meta.persist` + storage adapter | —                                |
+| **Devtools**           | Redux DevTools                    | Zustand DevTools                 | React Query Devtools             |
+| **Server components**  | No (client-only)                  | No (client-only)                 | No (client-only)                 |
+| **Bundle overhead**    | Larger (RTK + Saga)               | Minimal                          | Moderate (React Query)           |
+
+## When to use each
+
+<AccordionGroup>
+  <Accordion title="Redux — complex side-effects and large apps">
+    Choose Redux when you need:
+    - Fine-grained control over async flow with `takeLatest` / `takeEvery` saga effects
+    - A single, inspectable global store shared across many features
+    - Time-travel debugging via Redux DevTools
+    - Integration with an existing Redux codebase
+
+    [Learn more about the Redux adapter](/adapters/redux)
+
+  </Accordion>
+  <Accordion title="Zustand — lightweight stores">
+    Choose Zustand when you need:
+    - A small, low-boilerplate store per resource
+    - No provider wrapping required
+    - Minimal bundle footprint
+    - Simple, synchronous-feeling async state
+
+    [Learn more about the Zustand adapter](/adapters/zustand)
+
+  </Accordion>
+  <Accordion title="TanStack Query — server-state and cache-first">
+    Choose TanStack Query when you need:
+    - Automatic background refetching and stale-while-revalidate semantics
+    - Built-in pagination, infinite scroll, and mutation helpers
+    - First-class distinction between queries (reads) and mutations (writes)
+    - The React Query DevTools ecosystem
+
+    [Learn more about the TanStack Query adapter](/adapters/tanstack-query)
+
+  </Accordion>
+</AccordionGroup>
+
+## Shared infrastructure
+
+All three adapters share the same underlying infrastructure:
+
+- **HTTP client** (`apiClient`) — Axios-based, handles auth headers and token refresh
+- **Storage adapters** — `localStorageAdapter`, `sessionStorageAdapter` (AES-GCM encrypted)
+- **TokenManager** — Reads/writes tokens, auto-refreshes on 401
+- **ResourceAdapter** — Maps resource configs to HTTP calls, handles path param interpolation
+
+See [HTTP Client](/core/http-client), [Storage](/core/storage), and [Token Management](/core/token-management) for details.

@@ -1,0 +1,260 @@
+---
+title: "Core API Reference"
+description: "Reference for all exports from @estedio/react — config helpers, entities, ports, HTTP, and storage."
+---
+
+## Config helpers
+
+Imported from any adapter entry point: `@estedio/react/redux`, `@estedio/react/zustand`, `@estedio/react/tanstack-query`, or `@estedio/react`.
+
+### initializeLibConfig
+
+```ts
+function initializeLibConfig(config: Partial<LibraryConfig>): void;
+```
+
+Merges provided values into the shared runtime config. Call once at application startup.
+
+### getLibConfig
+
+```ts
+function getLibConfig(
+  overrides?: Partial<LibraryConfig>,
+  env?: Record<string, string | undefined>,
+): LibraryConfig;
+```
+
+Returns the fully resolved `LibraryConfig`, merging runtime config, environment variables, and any call-site overrides.
+
+### dataProvider
+
+```ts
+function dataProvider(config: DataProviderConfig): Partial<LibraryConfig>;
+```
+
+Maps a snake_case config object to `LibraryConfig`. See [Configuration — dataProvider](/configuration#dataprovider-helper) for usage.
+
+### resetLibConfig
+
+```ts
+function resetLibConfig(): void;
+```
+
+Clears all runtime config values. Primarily for use in tests.
+
+---
+
+## Types
+
+### LibraryConfig
+
+```ts
+interface LibraryConfig {
+  nodeEnv: string;
+  apiBaseUrl: string;
+  refreshEndpoint: string;
+  accessTokenKey: string;
+  refreshTokenKey: string;
+  storageSecret: string;
+}
+```
+
+### DataProviderConfig
+
+```ts
+interface DataProviderConfig {
+  base_url?: string;
+  refresh_endpoint?: string;
+  access_token_key?: string;
+  refresh_token_key?: string;
+  storage_secret?: string;
+  /** @deprecated Use access_token_key */
+  access_token?: string;
+  /** @deprecated Use refresh_token_key */
+  refresh_token?: string;
+}
+```
+
+### ResourceConfig
+
+```ts
+interface ResourceConfig<TPayload = unknown, TResponse = unknown> {
+  endpoint: string;
+  method: HttpMethod;
+  authenticated?: boolean;
+  sagaEffect?: SagaEffect; // Redux only
+  meta?: ResourceConfigMeta;
+  payload?: TPayload; // Type-only marker
+  response?: TResponse; // Type-only marker
+}
+```
+
+### ResourceConfigMeta
+
+```ts
+interface ResourceConfigMeta {
+  persist: boolean;
+  persistKey: string;
+  isAuthResource?: boolean;
+}
+```
+
+### ResourceState
+
+```ts
+interface ResourceState<T = unknown> {
+  result: T | null;
+  error: string | null;
+  loading: boolean;
+}
+```
+
+### HttpMethod
+
+```ts
+type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "MULTIPART";
+```
+
+### SagaEffect
+
+```ts
+type SagaEffect = "takeLatest" | "takeEvery";
+```
+
+### RequestConfig
+
+Extends `AxiosRequestConfig` with:
+
+```ts
+interface RequestConfig extends AxiosRequestConfig {
+  _retry?: boolean; // Internal: marks a retried request
+  skipAuth?: boolean; // Skip the Authorization header
+}
+```
+
+### NormalizedApiError
+
+```ts
+interface NormalizedApiError {
+  status: number; // HTTP status code (0 for non-HTTP errors)
+  code: string; // API error code or Axios error code
+  ray_id: string; // Tracing ID from API response
+  message: string; // Human-readable error message
+}
+```
+
+---
+
+## Ports
+
+### IApiPort
+
+```ts
+interface IApiPort {
+  execute<T = unknown>(resource: string, payload?: unknown): Promise<T>;
+}
+```
+
+### IStoragePort
+
+```ts
+interface IStoragePort {
+  getAsync(key: string): Promise<string | null>;
+  setAsync(key: string, value: string): Promise<void>;
+  remove(key: string): void;
+  clear(): void;
+}
+```
+
+---
+
+## HTTP
+
+### ResourceAdapter
+
+```ts
+class ResourceAdapter implements IApiPort {
+  constructor(registry: Record<string, ResourceConfig>);
+  execute<T>(resource: string, payload?: unknown): Promise<T>;
+}
+```
+
+### apiClient
+
+Singleton `APIClient` instance. Methods: `get`, `post`, `put`, `patch`, `delete`.
+
+---
+
+## Storage
+
+### localStorageAdapter
+
+Singleton `LocalStorageAdapter` instance backed by `window.localStorage` with AES-GCM encryption.
+
+### sessionStorageAdapter
+
+Singleton `SessionStorageAdapter` instance backed by `window.sessionStorage` with AES-GCM encryption.
+
+### encrypt / decrypt
+
+```ts
+function encrypt(value: string): Promise<string>;
+function decrypt(value: string): Promise<string>;
+```
+
+Low-level AES-GCM helpers used internally by storage adapters.
+
+### EncryptedStorageBase
+
+Abstract base class both storage adapters extend. Implements `IStoragePort` with encrypted read/write using the Web Crypto API.
+
+---
+
+## Token management
+
+### tokenManager
+
+Default `TokenManager` singleton backed by `localStorageAdapter` with keys from `LibraryConfig`.
+
+### TokenManager
+
+```ts
+class TokenManager {
+  constructor(
+    storage: IStoragePort,
+    config: TokenManagerConfig | (() => TokenManagerConfig),
+  );
+  getAccessToken(): Promise<string | null>;
+  getRefreshToken(): Promise<string | null>;
+  setTokens(accessToken: string, refreshToken: string): Promise<void>;
+  clearTokens(): void;
+}
+```
+
+### createTokenManager
+
+```ts
+function createTokenManager(
+  storage: IStoragePort,
+  config: TokenManagerConfig | (() => TokenManagerConfig),
+): TokenManager;
+```
+
+### TokenManagerConfig
+
+```ts
+interface TokenManagerConfig {
+  accessTokenKey: string;
+  refreshTokenKey: string;
+}
+```
+
+### initialResourceState
+
+```ts
+const initialResourceState: ResourceState = {
+  result: null,
+  error: null,
+  loading: false,
+};
+```

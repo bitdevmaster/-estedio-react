@@ -1,0 +1,126 @@
+---
+title: "Token Management"
+description: "How @estedio/react stores, reads, and auto-refreshes JWT tokens using TokenManager."
+---
+
+## Overview
+
+`TokenManager` handles the lifecycle of JWT access and refresh tokens:
+
+1. Reads/writes tokens to an `IStoragePort` (encrypted localStorage by default)
+2. Attaches the `Authorization: Bearer <token>` header to authenticated requests
+3. Automatically refreshes the access token when a 401 response is received, then retries the original request once
+
+## Default tokenManager
+
+The library exports a pre-built singleton, `tokenManager`, configured to use `localStorageAdapter` with token key names from `LibraryConfig`:
+
+```ts
+import { tokenManager } from "@estedio/react/redux"; // or /zustand or /tanstack-query
+
+// Read tokens
+const accessToken = await tokenManager.getAccessToken();
+const refreshToken = await tokenManager.getRefreshToken();
+
+// Write tokens (usually done automatically via isAuthResource)
+await tokenManager.setTokens(accessToken, refreshToken);
+
+// Clear on logout
+tokenManager.clearTokens();
+```
+
+## How auto-refresh works
+
+When `apiClient` receives a 401 response on an authenticated request:
+
+1. It checks whether the request has already been retried (`_retry` flag)
+2. If not, it calls `POST <refreshEndpoint>` with the current refresh token
+3. The new access and refresh tokens from the response are saved via `tokenManager.setTokens`
+4. The original request is retried once with the new access token
+
+If the refresh request also fails, the error is propagated to the caller.
+
+## TokenManagerConfig
+
+```ts
+interface TokenManagerConfig {
+  accessTokenKey: string; // Storage key for access token
+  refreshTokenKey: string; // Storage key for refresh token
+}
+```
+
+The default `tokenManager` resolves these keys lazily from `getLibConfig()` at call time, so calling `initializeLibConfig` at startup is sufficient.
+
+## Auth resources
+
+Mark a resource with `meta.isAuthResource: true` to automatically call `tokenManager.setTokens` when the request succeeds. This is the primary way to save tokens after a login:
+
+```ts
+const Login: ResourceConfig = {
+  endpoint: "/auth/login",
+  method: "POST",
+  authenticated: false,
+  meta: {
+    persist: true,
+    persistKey: "auth_response",
+    isAuthResource: true,
+  },
+};
+```
+
+The adapter expects the API response to contain `access_token` and `refresh_token` (or the keys configured in `LibraryConfig`).
+
+## createTokenManager
+
+For advanced use cases — for example, using `sessionStorage` for tokens instead of `localStorage`:
+
+```ts
+import {
+  createTokenManager,
+  sessionStorageAdapter,
+} from "@estedio/react/redux";
+
+const sessionTokenManager = createTokenManager(sessionStorageAdapter, {
+  accessTokenKey: "access_token",
+  refreshTokenKey: "refresh_token",
+});
+```
+
+You can also pass a resolver function instead of a static config, which is called on every operation:
+
+```ts
+import {
+  createTokenManager,
+  localStorageAdapter,
+  getLibConfig,
+} from "@estedio/react/redux";
+
+const dynamicTokenManager = createTokenManager(localStorageAdapter, () => ({
+  accessTokenKey: getLibConfig().accessTokenKey,
+  refreshTokenKey: getLibConfig().refreshTokenKey,
+}));
+```
+
+## Security note
+
+<Warning>
+  Storing tokens in browser storage (localStorage or sessionStorage) is
+  vulnerable to XSS attacks. For production systems handling sensitive auth
+  flows, prefer `httpOnly` cookies managed by the server. The `TokenManager` is
+  provided for convenience in development and lower-risk applications.
+</Warning>
+
+## Logout
+
+To fully clear tokens on logout:
+
+```ts
+import { tokenManager } from "@estedio/react/redux";
+
+function logout() {
+  tokenManager.clearTokens();
+  // redirect to login...
+}
+```
+
+`clearTokens` calls `storage.remove` for both the access and refresh token keys.
