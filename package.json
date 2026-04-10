@@ -1,0 +1,145 @@
+{
+  "name": "@estedio/react",
+  "version": "0.1.1",
+  "description": "Reusable hexagonal architecture core for Redux + Saga applications",
+  "author": "Estedio",
+  "license": "MIT",
+  "keywords": [
+    "react",
+    "redux",
+    "redux-saga",
+    "hexagonal-architecture",
+    "rtk",
+    "resource-management",
+    "nextjs"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bitdevmaster/-estedio-react.git"
+  },
+  "bugs": {
+    "url": "https://github.com/bitdevmaster/-estedio-react/issues"
+  },
+  "homepage": "https://github.com/bitdevmaster/-estedio-react#readme",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    },
+    "./http": {
+      "types": "./dist/http/index.d.ts",
+      "import": "./dist/http/index.mjs",
+      "require": "./dist/http/index.js"
+    },
+    "./storage": {
+      "types": "./dist/storage/index.d.ts",
+      "import": "./dist/storage/index.mjs",
+      "require": "./dist/storage/index.js"
+    },
+    "./redux": {
+      "types": "./dist/redux/index.d.ts",
+      "import": "./dist/redux/index.mjs",
+      "require": "./dist/redux/index.js"
+    },
+    "./zustand": {
+      "types": "./dist/zustand/index.d.ts",
+      "import": "./dist/zustand/index.mjs",
+      "require": "./dist/zustand/index.js"
+    },
+    "./tanstack-query": {
+      "types": "./dist/tanstack-query/index.d.ts",
+      "import": "./dist/tanstack-query/index.mjs",
+      "require": "./dist/tanstack-query/index.js"
+    },
+    "./store": {
+      "types": "./dist/redux/index.d.ts",
+      "import": "./dist/redux/index.mjs",
+      "require": "./dist/redux/index.js"
+    },
+    "./hooks": {
+      "types": "./dist/redux/hooks/index.d.ts",
+      "import": "./dist/redux/hooks/index.mjs",
+      "require": "./dist/redux/hooks/index.js"
+    }
+  },
+  "sideEffects": false,
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "prepack": "yarn build",
+    "dev": "tsup --watch",
+    "type-check": "tsc --noEmit",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "format": "prettier . --write",
+    "format:check": "prettier . --check",
+    "docs:dev": "cd docs && mint dev",
+    "docs:build": "cd docs && mint build"
+  },
+  "peerDependencies": {
+    "@reduxjs/toolkit": "^2.11.2",
+    "@tanstack/react-query": "^5.90.2",
+    "@types/react": "^18 || ^19",
+    "axios": "^1.14.0",
+    "react": "^18.0.0 || ^19.0.0",
+    "react-redux": "^9.2.0",
+    "redux-saga": "^1.4.2",
+    "zustand": "^5.0.8"
+  },
+  "peerDependenciesMeta": {
+    "@reduxjs/toolkit": {
+      "optional": true
+    },
+    "@tanstack/react-query": {
+      "optional": true
+    },
+    "@types/react": {
+      "optional": true
+    },
+    "axios": {
+      "optional": true
+    },
+    "react": {
+      "optional": true
+    },
+    "react-redux": {
+      "optional": true
+    },
+    "redux-saga": {
+      "optional": true
+    },
+    "zustand": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@reduxjs/toolkit": "^2.11.2",
+    "@tanstack/react-query": "^5.97.0",
+    "@types/node": "^20.19.22",
+    "@types/react": "^19.2.2",
+    "axios": "^1.14.0",
+    "eslint": "^9.25.1",
+    "eslint-config-prettier": "^9.1.0",
+    "globals": "^16.0.0",
+    "prettier": "^3.5.3",
+    "react": "^19.2.4",
+    "react-redux": "^9.2.0",
+    "redux-saga": "^1.4.2",
+    "tsup": "^8.5.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.30.1",
+    "zustand": "^5.0.12"
+  }
+}
