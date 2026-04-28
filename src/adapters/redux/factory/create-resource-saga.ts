@@ -17,23 +17,28 @@ import type { ResourceSlice } from "./create-resource-slice";
 import type { FetchPayload } from "./resource.types";
 import type { IStoragePort } from "../../../core/ports/storage.port";
 import { tokenManager } from "../../../http/client/token-manager";
+import { shouldSkipFetch } from "../../../state/behaviors/cache.behavior";
+import {
+  isTokenResponse,
+  saveAuthTokens,
+} from "../../../state/behaviors/auth.behavior";
+import { persistResult } from "../../../state/behaviors/persist.behavior";
 
 type FetchAction = PayloadAction<FetchPayload>;
-
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-};
 
 /**
  * Factory that generates worker + watcher sagas for a given resource.
  *
  * Worker behaviour:
- *  1. If force=false and state[resource].result is non-null → call callback
- *     with cached result, skip API call.
+ *  1. If force=false and state[resource].result is non-null → return cached
+ *     result via callback, skip API call.
  *  2. Otherwise call adapter.execute(resource, payload).
  *  3. Dispatch fetchSuccess / fetchFailure accordingly.
  *  4. Invoke callback(result, error).
+ *
+ * Cross-cutting behaviours (cache-hit check, token saving, persistence)
+ * are delegated to the shared state/behaviors layer so the same logic
+ * is not duplicated across the Zustand and TanStack adapters.
  */
 export function createResourceSaga(
   name: string,
@@ -59,37 +64,16 @@ export function createResourceSaga(
 
   const { fetch, fetchSuccess, fetchFailure } = slice.actions;
 
-  const isTokenResponse = (value: unknown): value is TokenResponse => {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
-      return false;
-    }
-
-    const maybeToken = value as Record<string, unknown>;
-    return (
-      typeof maybeToken.access_token === "string" &&
-      typeof maybeToken.refresh_token === "string"
-    );
-  };
-
-  function* persistResponse(result: unknown): Generator {
-    if (!meta?.persist || !meta.persistKey || !storage) {
-      return;
-    }
-
-    const serialized = JSON.stringify(result);
-    yield call([storage, storage.setAsync], meta.persistKey, serialized);
-  }
-
   function* workerSaga(action: FetchAction): Generator {
     const { payload: requestPayload, force, callback } = action.payload;
 
-    // Cache check when force is explicitly false
+    // Cache-hit check — delegates condition to shared behavior.
     if (force === false) {
       const currentState = (yield select(
         (state: Record<string, { result: unknown }>) => state[name],
       )) as { result: unknown };
 
-      if (currentState?.result !== null) {
+      if (shouldSkipFetch(force, currentState?.result)) {
         callback?.(currentState.result, null);
         return;
       }
@@ -102,16 +86,16 @@ export function createResourceSaga(
         requestPayload,
       )) as unknown;
 
+      // Auth token handling — delegates to shared behavior via saga call effect.
       if (meta?.isAuthResource && isTokenResponse(result)) {
-        yield call(
-          [tokenManager, tokenManager.setTokens],
-          result.access_token,
-          result.refresh_token,
-        );
+        yield call(saveAuthTokens, tokenManager, result, meta.isAuthResource);
       }
 
       yield put(fetchSuccess(result));
-      yield* persistResponse(result);
+
+      // Persistence — delegates to shared behavior via saga call effect.
+      yield call(persistResult, meta, storage, result);
+
       callback?.(result, null);
     } catch (error: unknown) {
       const message = error instanceof Error ? error.message : String(error);

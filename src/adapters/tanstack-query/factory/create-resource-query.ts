@@ -18,6 +18,14 @@ import type {
   ResourceState,
 } from "../../../core/entities/resource.entity";
 import { tokenManager } from "../../../http/client/token-manager";
+import {
+  isTokenResponse,
+  saveAuthTokens,
+} from "../../../state/behaviors/auth.behavior";
+import {
+  persistResult,
+  readPersistedResult,
+} from "../../../state/behaviors/persist.behavior";
 
 export type FetchCallback<TResponse> = (
   result: TResponse | null,
@@ -39,23 +47,6 @@ type ResourceConfigsFromTypeMap<TResourceMap extends ResourceTypeMapLike> = {
 interface ResourceHookDependencies {
   apiPort: IApiPort;
   storageByResource: Partial<Record<string, IStoragePort>>;
-}
-
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-};
-
-function isTokenResponse(value: unknown): value is TokenResponse {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const maybeToken = value as Record<string, unknown>;
-  return (
-    typeof maybeToken.access_token === "string" &&
-    typeof maybeToken.refresh_token === "string"
-  );
 }
 
 export type QueryResourceResult<TResponse> = Omit<
@@ -123,6 +114,10 @@ export function createResourceHooks<TResourceMap extends ResourceTypeMapLike>(
     return typeof value === "function";
   };
 
+  /**
+   * Executes a resource request and applies cross-cutting behaviours
+   * (auth token saving, persistence) via the shared state/behaviors layer.
+   */
   const executeResource = async <K extends keyof TResourceMap & string>(
     resource: K,
     payload?: TResourceMap[K]["payload"],
@@ -132,16 +127,14 @@ export function createResourceHooks<TResourceMap extends ResourceTypeMapLike>(
       TResourceMap[K]["response"]
     >(resource, payload);
 
-    if (config.meta?.isAuthResource && isTokenResponse(result)) {
-      await tokenManager.setTokens(result.access_token, result.refresh_token);
+    // Auth token handling — delegates to shared behavior.
+    if (isTokenResponse(result)) {
+      await saveAuthTokens(tokenManager, result, config.meta?.isAuthResource);
     }
 
-    if (config.meta?.persist && config.meta.persistKey) {
-      const storage = dependencies.storageByResource[resource];
-      if (storage) {
-        await storage.setAsync(config.meta.persistKey, JSON.stringify(result));
-      }
-    }
+    // Persistence — delegates to shared behavior.
+    const storage = dependencies.storageByResource[resource];
+    await persistResult(config.meta, storage, result);
 
     return result;
   };
@@ -175,48 +168,19 @@ export function createResourceHooks<TResourceMap extends ResourceTypeMapLike>(
     const queryClient = useQueryClient();
     const resourceQueryKey = queryKey ?? ([resource, payload] as const);
 
+    // Hydrate QueryClient cache from persisted storage on mount.
     useEffect(() => {
-      if (!config.meta?.persist || !config.meta.persistKey) {
-        return;
-      }
-
       const storage = dependencies.storageByResource[resource];
-      if (!storage) {
-        return;
-      }
 
-      void storage
-        .getAsync(config.meta.persistKey)
-        .then((persisted) => {
-          if (!persisted) {
-            return;
-          }
-
-          const current = queryClient.getQueryData(resourceQueryKey);
-          if (current !== undefined) {
-            return;
-          }
-
-          try {
-            const parsed = JSON.parse(persisted) as TResourceMap[K]["response"];
-            queryClient.setQueryData(resourceQueryKey, parsed);
-          } catch (error) {
-            if (process.env.NODE_ENV !== "production") {
-              console.warn(
-                `[tanstack-query] Failed to parse persisted state for resource "${resource}".`,
-                error,
-              );
-            }
-          }
-        })
-        .catch((error) => {
-          if (process.env.NODE_ENV !== "production") {
-            console.warn(
-              `[tanstack-query] Failed to read persisted state for resource "${resource}".`,
-              error,
-            );
-          }
-        });
+      void readPersistedResult<TResourceMap[K]["response"]>(
+        config.meta,
+        storage,
+      ).then((parsed) => {
+        if (parsed === null) return;
+        const current = queryClient.getQueryData(resourceQueryKey);
+        if (current !== undefined) return;
+        queryClient.setQueryData(resourceQueryKey, parsed);
+      });
     }, [
       config.meta?.persist,
       config.meta?.persistKey,

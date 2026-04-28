@@ -7,6 +7,15 @@ import {
 import type { IApiPort } from "../../../core/ports/api.port";
 import type { IStoragePort } from "../../../core/ports/storage.port";
 import { tokenManager } from "../../../http/client/token-manager";
+import { shouldSkipFetch } from "../../../state/behaviors/cache.behavior";
+import {
+  isTokenResponse,
+  saveAuthTokens,
+} from "../../../state/behaviors/auth.behavior";
+import {
+  persistResult,
+  readPersistedResult,
+} from "../../../state/behaviors/persist.behavior";
 
 export type FetchCallback<TResponse> = (
   result: TResponse | null,
@@ -26,23 +35,13 @@ export interface ResourceStoreState<
   reset: () => void;
 }
 
-type TokenResponse = {
-  access_token: string;
-  refresh_token: string;
-};
-
-function isTokenResponse(value: unknown): value is TokenResponse {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return false;
-  }
-
-  const maybeToken = value as Record<string, unknown>;
-  return (
-    typeof maybeToken.access_token === "string" &&
-    typeof maybeToken.refresh_token === "string"
-  );
-}
-
+/**
+ * Builds a vanilla Zustand store for a single resource.
+ *
+ * Cross-cutting behaviours (cache-hit check, token saving, persistence)
+ * are delegated to the shared state/behaviors layer — the same functions
+ * used by the Redux and TanStack adapters.
+ */
 export function createResourceStore<TPayload, TResponse>(
   name: string,
   config: ResourceConfig<TPayload, TResponse>,
@@ -84,9 +83,9 @@ export function createResourceStore<TPayload, TResponse>(
         force?: boolean;
         callback?: FetchCallback<TResponse>;
       }) => {
-        const currentState = get();
-        if (force === false && currentState.result !== null) {
-          callback?.(currentState.result, null);
+        // Cache-hit check — delegates condition to shared behavior.
+        if (shouldSkipFetch(force, get().result)) {
+          callback?.(get().result, null);
           return;
         }
 
@@ -95,21 +94,15 @@ export function createResourceStore<TPayload, TResponse>(
         try {
           const result = await apiPort.execute<TResponse>(name, payload);
 
-          if (config.meta?.isAuthResource && isTokenResponse(result)) {
-            await tokenManager.setTokens(
-              result.access_token,
-              result.refresh_token,
-            );
+          // Auth token handling — delegates to shared behavior.
+          if (isTokenResponse(result)) {
+            await saveAuthTokens(tokenManager, result, config.meta?.isAuthResource);
           }
 
           set({ result, loading: false, error: null });
 
-          if (config.meta?.persist && config.meta.persistKey && storage) {
-            await storage.setAsync(
-              config.meta.persistKey,
-              JSON.stringify(result),
-            );
-          }
+          // Persistence — delegates to shared behavior.
+          await persistResult(config.meta, storage, result);
 
           callback?.(result, null);
         } catch (error: unknown) {
@@ -122,24 +115,12 @@ export function createResourceStore<TPayload, TResponse>(
     }),
   );
 
-  if (config.meta?.persist && config.meta.persistKey && storage) {
-    void storage
-      .getAsync(config.meta.persistKey)
-      .then((persisted) => {
-        if (!persisted) {
-          return;
-        }
-
-        try {
-          const parsed = JSON.parse(persisted) as TResponse;
+  // Hydrate store from persisted storage on initialization.
+  if (config.meta?.persist && storage) {
+    void readPersistedResult<TResponse>(config.meta, storage)
+      .then((parsed) => {
+        if (parsed !== null) {
           store.setState({ result: parsed, loading: false, error: null });
-        } catch (error) {
-          if (process.env.NODE_ENV !== "production") {
-            console.warn(
-              `[createResourceStore] Failed to parse persisted state for resource "${name}".`,
-              error,
-            );
-          }
         }
       })
       .catch((error) => {

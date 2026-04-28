@@ -1,10 +1,5 @@
-import {
-  configureStore,
-  combineReducers,
-  type EnhancedStore,
-} from "@reduxjs/toolkit";
-import createSagaMiddleware from "redux-saga";
 import { all } from "redux-saga/effects";
+import type { EnhancedStore } from "@reduxjs/toolkit";
 import type { IApiPort } from "../../core/ports/api.port";
 import type { IStoragePort } from "../../core/ports/storage.port";
 import type {
@@ -17,6 +12,7 @@ import {
   type ResourceSlice,
 } from "./factory/create-resource-slice";
 import { createResourceSaga } from "./factory/create-resource-saga";
+import { assembleReduxStore } from "./factory/create-store";
 import type { RootSagaDependencies } from "./composition";
 
 /**
@@ -40,13 +36,16 @@ export type RootStateFromResources<
 };
 
 /**
- * Factory that wires up Redux store for resource management.
+ * Factory that wires up a Redux store for resource management.
  *
  * Generates:
  *  - Slices for each resource
- *  - rootReducer with combineReducers
  *  - rootSaga that forks all resource sagas
  *  - makeStore closure for creating store instances
+ *
+ * Store construction (reducer combination + saga middleware) is handled
+ * internally by assembleReduxStore, keeping this function focused on
+ * resource orchestration.
  *
  * @param resources Registry of resource configs
  * @param options API adapter and storage configuration
@@ -66,19 +65,12 @@ export function createResources<
     new ResourceAdapter(resources as Record<string, ResourceConfig>);
   const storageByResource = options.storageByResource ?? {};
 
-  // Create slices for each resource
+  // Create one RTK slice per resource.
   const slices = Object.fromEntries(
     Object.keys(resources).map((name) => [name, createResourceSlice(name)]),
   ) as Record<keyof TResourceMap & string, ResourceSlice>;
 
-  // Build root reducer
-  const rootReducer = combineReducers(
-    Object.fromEntries(
-      Object.entries(slices).map(([name, slice]) => [name, slice.reducer]),
-    ),
-  );
-
-  // Build root saga
+  // Build root saga — forks one watcher saga per resource.
   function* rootSaga() {
     yield all(
       Object.entries(resources).map(([name, config]) => {
@@ -136,26 +128,16 @@ export function createResources<
     );
   }
 
-  // Create store factory
+  // makeStore: assembles the store via the focused factory, then hydrates.
   function makeStore(): EnhancedStore<RootStateFromResources<TResourceMap>> {
-    const sagaMiddleware = createSagaMiddleware();
+    const store = assembleReduxStore(
+      slices,
+      rootSaga,
+    ) as EnhancedStore<RootStateFromResources<TResourceMap>>;
 
-    const store = configureStore({
-      reducer: rootReducer,
-      middleware: (getDefaultMiddleware) =>
-        getDefaultMiddleware({
-          thunk: false,
-          serializableCheck: { ignoredActionPaths: ["payload.callback"] },
-        }).concat(sagaMiddleware),
-    });
+    void hydratePersistedResources(store);
 
-    sagaMiddleware.run(rootSaga);
-
-    void hydratePersistedResources(
-      store as EnhancedStore<RootStateFromResources<TResourceMap>>,
-    );
-
-    return store as EnhancedStore<RootStateFromResources<TResourceMap>>;
+    return store;
   }
 
   return { makeStore, slices };

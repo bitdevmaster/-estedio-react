@@ -8,9 +8,5 @@ export interface RequestConfig extends AxiosRequestConfig {
   skipAuth?: boolean;
 }
 
-export interface NormalizedApiError {
-  status: number;
-  code: string;
-  ray_id: string;
-  message: string;
-}
+// Re-exported from core so consumers importing from either location get the same type.
+export type { NormalizedApiError } from "../../core/entities/error.entity";
