@@ -1,17 +1,17 @@
 ---
 title: "Quickstart"
-description: "Install @estedio/react, configure it, and make your first resource call in under 5 minutes."
+description: "Install @estedio/react, configure the runtime, and make your first resource call."
 ---
 
 ## 1. Install
 
-Install the core package and `axios`, which is always required:
+Install the package and `axios`:
 
 ```bash
 npm install @estedio/react axios
 ```
 
-Then install the peer dependencies for the adapter you want to use:
+Then install the peer dependencies for your adapter:
 
 <Tabs>
   <Tab title="Redux">
@@ -23,13 +23,10 @@ Then install the peer dependencies for the adapter you want to use:
   </Tab>
 </Tabs>
 
-## 2. Configure
-
-Call `initializeLibConfig` once at application startup, before any resource is fetched:
+## 2. Configure the shared runtime
 
 ```ts
-// app/config.ts
-import { initializeLibConfig } from "@estedio/react/redux"; // or /zustand or /tanstack-query
+import { initializeLibConfig } from "@estedio/react/redux";
 
 initializeLibConfig({
   apiBaseUrl: "https://api.example.com",
@@ -41,17 +38,13 @@ initializeLibConfig({
 ```
 
 <Tip>
-  You can also pass values via environment variables — the library reads
-  `ESTEDIO_API_BASE_URL` and `NEXT_PUBLIC_API_BASE_URL` automatically. See
-  [Configuration](/configuration) for the full list.
+  You can also use environment variables or `dataProvider`. See
+  [Configuration](/configuration) for the complete matrix.
 </Tip>
 
 ## 3. Define resources
 
-Create a file that defines your resource type map and config objects:
-
 ```ts
-// resources.ts
 import type { ResourceConfig } from "@estedio/react/redux";
 
 type User = { id: number; name: string };
@@ -70,6 +63,10 @@ export const resources = {
     authenticated: true,
     payload: {} as void,
     response: {} as User[],
+    meta: {
+      persist: true,
+      persistKey: "users_cache",
+    },
   },
   GetUserById: {
     endpoint: "/users/:userId",
@@ -88,92 +85,113 @@ export const resources = {
 } satisfies Record<keyof ResourceTypeMap, ResourceConfig>;
 ```
 
-<Note>
-  The `:userId` in the endpoint is automatically replaced with the value from
-  the payload at runtime. See [HTTP Client — Path
-  parameters](/core/http-client#path-parameters) for details.
-</Note>
-
-## 4. Set up your adapter
+## 4. Wire the adapter
 
 <Tabs>
   <Tab title="Redux">
-    **Create the store:**
     ```ts
-    // store.ts
-    import { createResources, localStorageAdapter } from "@estedio/react/redux";
+    import {
+      createResources,
+      createHooks,
+      localStorageAdapter,
+    } from "@estedio/react/redux";
     import { resources } from "./resources";
+    import type { ResourceTypeMap } from "./resources";
 
     export const { makeStore, slices } = createResources(resources, {
       storageByResource: {
         GetUsers: localStorageAdapter,
       },
     });
+
+    export const { useResourceDispatch, useResourceSelector } =
+      createHooks<ResourceTypeMap>(slices);
     ```
 
-    **Add the provider:**
     ```tsx
-    // app/providers.tsx
     "use client";
     import { StoreProvider } from "@estedio/react/redux";
     import { makeStore } from "./store";
 
-    export function AppProvider({ children }: { children: React.ReactNode }) {
-      return (
-        <StoreProvider makeStore={makeStore} provider={{ apiBaseUrl: "https://api.example.com" }}>
-          {children}
-        </StoreProvider>
-      );
+    export function AppProvider({
+      children,
+    }: {
+      children: React.ReactNode;
+    }) {
+      return <StoreProvider makeStore={makeStore}>{children}</StoreProvider>;
     }
     ```
 
-    **Create typed hooks:**
-    ```ts
-    // hooks.ts
-    "use client";
-    import { createResourceHooks } from "@estedio/react/redux";
-    import { slices } from "./store";
-    import type { ResourceTypeMap } from "./resources";
-
-    export const { useResourceDispatch, useResourceSelector } =
-      createResourceHooks<ResourceTypeMap>(slices);
-    ```
-
   </Tab>
+
   <Tab title="Zustand">
     ```ts
-    // store.ts
-    "use client";
-    import { createResources, createResourceHooks } from "@estedio/react/zustand";
+    import {
+      createStore,
+      createHooks,
+      localStorageAdapter,
+    } from "@estedio/react/zustand";
     import { resources } from "./resources";
     import type { ResourceTypeMap } from "./resources";
 
-    const { stores } = createResources<ResourceTypeMap>(resources);
+    const { stores } = createStore<ResourceTypeMap>(resources, {
+      storageByResource: {
+        GetUsers: localStorageAdapter,
+      },
+    });
 
     export const { useResourceDispatch, useResourceSelector } =
-      createResourceHooks<ResourceTypeMap>(stores);
+      createHooks<ResourceTypeMap>(stores);
+    ```
+
+    ```tsx
+    "use client";
+    import { ZustandProvider } from "@estedio/react/zustand";
+
+    export function AppProvider({
+      children,
+    }: {
+      children: React.ReactNode;
+    }) {
+      return <ZustandProvider>{children}</ZustandProvider>;
+    }
     ```
 
   </Tab>
+
   <Tab title="TanStack Query">
-    ```tsx
-    // app/providers.tsx
-    "use client";
-    import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-    import { createResources } from "@estedio/react/tanstack-query";
+    ```ts
+    import {
+      createStore,
+      localStorageAdapter,
+    } from "@estedio/react/tanstack-query";
     import { resources } from "./resources";
     import type { ResourceTypeMap } from "./resources";
+
+    export const { useResourceQuery, useResourceMutation } =
+      createStore<ResourceTypeMap>(resources, {
+        storageByResource: {
+          GetUsers: localStorageAdapter,
+        },
+      });
+    ```
+
+    ```tsx
+    "use client";
+    import { QueryClient } from "@tanstack/react-query";
+    import { TanstackProvider } from "@estedio/react/tanstack-query";
 
     const queryClient = new QueryClient();
 
-    export const { useResourceQuery, useResourceMutation } =
-      createResources<ResourceTypeMap>(resources);
-
-    export function AppProvider({ children }: { children: React.ReactNode }) {
+    export function AppProvider({
+      children,
+    }: {
+      children: React.ReactNode;
+    }) {
       return (
-        <QueryClientProvider client={queryClient}>
+        <TanstackProvider queryClient={queryClient}>
           {children}
-        </QueryClientProvider>
+        </TanstackProvider>
       );
     }
     ```
@@ -181,28 +199,32 @@ export const resources = {
   </Tab>
 </Tabs>
 
-## 5. Fetch data in a component
+## 5. Use the generated API
 
 <Tabs>
   <Tab title="Redux / Zustand">
     ```tsx
     "use client";
-    import { useResourceDispatch, useResourceSelector } from "./hooks";
+
+    import { useResourceDispatch, useResourceSelector } from "./store";
 
     export function UserList() {
       const dispatch = useResourceDispatch();
       const { result, loading, error } = useResourceSelector("GetUsers");
 
-      if (loading) return <p>Loading...</p>;
-      if (error) return <p>Error: {error}</p>;
-
       return (
         <>
-          <button onClick={() => dispatch({ resource: "GetUsers", force: false })}>
+          <button
+            onClick={() => dispatch({ resource: "GetUsers", force: false })}
+          >
             Fetch users
           </button>
+          {loading && <p>Loading...</p>}
+          {error && <p>Error: {error}</p>}
           <ul>
-            {result?.map((user) => <li key={user.id}>{user.name}</li>)}
+            {result?.map((user) => (
+              <li key={user.id}>{user.name}</li>
+            ))}
           </ul>
         </>
       );
@@ -210,10 +232,12 @@ export const resources = {
     ```
 
   </Tab>
+
   <Tab title="TanStack Query">
     ```tsx
     "use client";
-    import { useResourceQuery, useResourceMutation } from "./providers";
+
+    import { useResourceMutation, useResourceQuery } from "./store";
 
     export function UserList() {
       const { result, loading, error } = useResourceQuery({
@@ -227,11 +251,20 @@ export const resources = {
 
       return (
         <>
-          <button onClick={() => createUser.dispatch({ name: "Alice", email: "alice@example.com" })}>
+          <button
+            onClick={() =>
+              createUser.dispatch({
+                name: "Alice",
+                email: "alice@example.com",
+              })
+            }
+          >
             Create user
           </button>
           <ul>
-            {result?.map((user) => <li key={user.id}>{user.name}</li>)}
+            {result?.map((user) => (
+              <li key={user.id}>{user.name}</li>
+            ))}
           </ul>
         </>
       );
@@ -243,11 +276,6 @@ export const resources = {
 
 ## Next steps
 
-<CardGroup cols={2}>
-  <Card title="Configuration reference" icon="gear" href="/configuration">
-    All LibraryConfig fields, env vars, and the dataProvider helper.
-  </Card>
-  <Card title="Adapter deep-dives" icon="plug" href="/adapters/overview">
-    Advanced usage for each adapter including saga effects and persistence.
-  </Card>
-</CardGroup>
+- Read the [Adapter Overview](/adapters/overview)
+- Review the [Configuration reference](/configuration)
+- Browse the [Core API Reference](/api-reference/core)

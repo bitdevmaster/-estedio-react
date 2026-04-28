@@ -1,32 +1,32 @@
 ---
 title: "Introduction"
-description: "Reusable hexagonal architecture utilities for resource-based data flows in React apps."
+description: "Hexagonal resource primitives for React applications with Redux, Zustand, and TanStack Query adapters."
 ---
 
 ## What is @estedio/react?
 
-`@estedio/react` is a library that brings [hexagonal architecture](<https://en.wikipedia.org/wiki/Hexagonal_architecture_(software)>) patterns to React applications. It gives you a uniform, type-safe way to define API resources and connect them to whichever state management library your team already uses — Redux, Zustand, or TanStack Query — without changing how you define your resources.
+`@estedio/react` gives React applications a single resource model that can be wired into Redux, Zustand, or TanStack Query without changing the resource definitions themselves.
+
+You define resources once, choose an adapter entry point, and get back typed hooks or stores powered by a shared HTTP, token, and persistence runtime.
 
 <CardGroup cols={2}>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Install the library and make your first resource call in minutes.
+    Install the package and ship your first resource flow quickly.
   </Card>
   <Card title="Configuration" icon="gear" href="/configuration">
-    Configure the API base URL, auth tokens, and encrypted storage.
+    Configure runtime URLs, token keys, and encrypted storage.
   </Card>
   <Card title="Adapter guides" icon="plug" href="/adapters/overview">
-    Choose between Redux, Zustand, and TanStack Query adapters.
+    Compare Redux, Zustand, and TanStack Query side by side.
   </Card>
   <Card title="API Reference" icon="brackets-curly" href="/api-reference/core">
-    Full reference for every exported function and type.
+    Browse the exported functions, types, and provider helpers.
   </Card>
 </CardGroup>
 
 ## Core ideas
 
-### Resources are just config objects
-
-A resource is an object that describes an API endpoint — its URL, HTTP method, whether it needs authentication, and optionally how to persist its response in the browser.
+### Resources are configuration, not boilerplate
 
 ```ts
 const GetUsers: ResourceConfig<void, User[]> = {
@@ -36,23 +36,22 @@ const GetUsers: ResourceConfig<void, User[]> = {
 };
 ```
 
-You define all your resources once and pass them to an adapter-specific factory. From that point on, every hook, selector, and dispatch is fully typed.
+The same resource definition can power:
 
-### Hexagonal architecture
+- Redux slices and sagas
+- Zustand resource stores
+- TanStack Query queries and mutations
 
-The library separates concerns into three layers:
+### Shared runtime, adapter-specific state
 
-| Layer              | Responsibility                                                                   |
-| ------------------ | -------------------------------------------------------------------------------- |
-| **Core**           | `ResourceConfig`, `ResourceState`, ports (`IApiPort`, `IStoragePort`)            |
-| **Infrastructure** | HTTP client, encrypted storage adapters, token manager                           |
-| **Adapters**       | Redux, Zustand, TanStack Query — each wires the core to a concrete state library |
+| Layer           | Responsibility                                                   |
+| --------------- | ---------------------------------------------------------------- |
+| Core            | `ResourceConfig`, `ResourceState`, `NormalizedApiError`, ports   |
+| Infrastructure  | `apiClient`, `ResourceAdapter`, token manager, encrypted storage |
+| State behaviors | Cache skipping, token persistence, persisted result hydration    |
+| Adapters        | Redux, Zustand, and TanStack Query integration points            |
 
-Your application code only touches adapter hooks (`useResourceSelector`, `useResourceDispatch`, `useResourceQuery`). The infrastructure is hidden behind port interfaces.
-
-### One API, three adapters
-
-All three adapters expose a consistent `ResourceState<T>` shape:
+### One state shape across all adapters
 
 ```ts
 type ResourceState<T> = {
@@ -62,16 +61,20 @@ type ResourceState<T> = {
 };
 ```
 
-Switching state management libraries requires changing only the import path — your resource definitions stay the same.
-
 ## Adapter comparison
 
-| Feature           | Redux                            | Zustand                  | TanStack Query                  |
-| ----------------- | -------------------------------- | ------------------------ | ------------------------------- |
-| Import path       | `@estedio/react/redux`           | `@estedio/react/zustand` | `@estedio/react/tanstack-query` |
-| State store       | Redux Toolkit slice              | Zustand store            | React Query cache               |
-| Side-effects      | Redux Saga                       | Internal async           | Built-in query/mutation         |
-| Provider required | `StoreProvider`                  | None                     | `QueryClientProvider`           |
-| Saga effects      | `takeLatest` / `takeEvery`       | —                        | —                               |
-| Persistence       | `meta.persist`                   | `meta.persist`           | —                               |
-| Best for          | Complex side-effects, large apps | Lightweight stores       | Server-state / cache-first      |
+| Feature              | Redux                                | Zustand                              | TanStack Query                                       |
+| -------------------- | ------------------------------------ | ------------------------------------ | ---------------------------------------------------- |
+| Import path          | `@estedio/react/redux`               | `@estedio/react/zustand`             | `@estedio/react/tanstack-query`                      |
+| State model          | Redux Toolkit slices                 | Vanilla Zustand stores               | Query and mutation hooks                             |
+| Side-effects         | Redux Saga                           | Internal `async/await`               | TanStack Query runtime                               |
+| Provider story       | `StoreProvider`                      | Optional `ZustandProvider`           | `TanstackProvider` or your own `QueryClientProvider` |
+| Persistence          | `meta.persist` + `storageByResource` | `meta.persist` + `storageByResource` | `meta.persist` + `storageByResource`                 |
+| Auth token auto-save | `meta.isAuthResource`                | `meta.isAuthResource`                | `meta.isAuthResource`                                |
+| Best fit             | Complex orchestration                | Lightweight local resource state     | Query-driven server state                            |
+
+## Where to go next
+
+- Start with [Quickstart](/quickstart)
+- Review the [Adapter Overview](/adapters/overview)
+- Explore the [Core API Reference](/api-reference/core)

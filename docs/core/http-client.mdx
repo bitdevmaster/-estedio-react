@@ -1,138 +1,78 @@
 ---
 title: "HTTP Client"
-description: "Understand how @estedio/react makes API calls — ResourceAdapter, apiClient, RequestQueue, and path parameter interpolation."
+description: "Understand the shared HTTP runtime behind all @estedio/react adapters."
 ---
 
 ## Overview
 
-The HTTP layer is built on [Axios](https://axios-http.com/). Three components work together:
+The HTTP runtime is built on Axios and shared by every adapter.
 
-| Component         | Responsibility                                                      |
-| ----------------- | ------------------------------------------------------------------- |
-| `apiClient`       | Singleton Axios instance with auth headers and auto-refresh         |
-| `ResourceAdapter` | Maps `ResourceConfig` definitions to the correct `apiClient` method |
-| `RequestQueue`    | Deduplicates in-flight requests to the same endpoint                |
-
-You generally do not interact with these directly — the adapter factories (Redux, Zustand, TanStack Query) wire them up automatically.
+| Component         | Responsibility                                               |
+| ----------------- | ------------------------------------------------------------ |
+| `apiClient`       | Auth headers, 401 refresh handling, normalized errors        |
+| `ResourceAdapter` | Maps `ResourceConfig` to an HTTP call                        |
+| `RequestQueue`    | Queues pending requests while a token refresh is in progress |
 
 ## ResourceAdapter
 
-`ResourceAdapter` implements `IApiPort` and translates a named resource call into an HTTP request.
+`ResourceAdapter` implements `IApiPort` and turns a resource name into an HTTP request.
 
 ```ts
-import { ResourceAdapter } from "@estedio/react/redux";
+import { ResourceAdapter } from "@estedio/react";
 
 const adapter = new ResourceAdapter(resources);
 const users = await adapter.execute("GetUsers");
 ```
 
-### Constructor
+### Path parameters
 
 ```ts
-new ResourceAdapter(registry: Record<string, ResourceConfig>)
-```
-
-Pass your resource map as the registry. The adapter looks up each resource by name at call time.
-
-### execute
-
-```ts
-adapter.execute<T>(resource: string, payload?: unknown): Promise<T>
-```
-
-Dispatches the appropriate HTTP method based on `ResourceConfig.method`. Throws if the resource name is not in the registry.
-
-### Path parameters {#path-parameters}
-
-Endpoints can contain `:paramName` tokens. The adapter extracts matching keys from the payload object, interpolates them into the URL, and forwards the remaining keys as the request body or query string.
-
-```ts
-// Resource config
-const GetUserById: ResourceConfig = {
-  endpoint: "/users/:userId/posts/:postId",
-  method: "GET",
-  authenticated: true,
-};
-
-// Dispatch
 adapter.execute("GetUserById", {
   userId: 7,
-  postId: 25,
-  includeComments: true,
+  includePosts: true,
 });
-// → GET /users/7/posts/25?includeComments=true
 ```
 
-Path param values are URI-encoded automatically. An error is thrown if a required param is missing from the payload.
-
-### HTTP methods
-
-| ResourceConfig.method | HTTP verb | Payload forwarding       |
-| --------------------- | --------- | ------------------------ |
-| `"GET"`               | GET       | As query string          |
-| `"POST"`              | POST      | As JSON body             |
-| `"PUT"`               | PUT       | As JSON body             |
-| `"PATCH"`             | PATCH     | As JSON body             |
-| `"DELETE"`            | DELETE    | As query string          |
-| `"MULTIPART"`         | POST      | As `multipart/form-data` |
+For an endpoint like `/users/:userId`, the adapter interpolates `userId` into the path and forwards the remaining payload values as the request body or query params.
 
 ## apiClient
 
-`apiClient` is the shared Axios instance used by all adapters. It handles:
+`apiClient` handles:
 
-- Attaching the `Authorization: Bearer <token>` header for authenticated requests
-- Intercepting 401 responses and triggering a token refresh before retrying once
-- Resolving `apiBaseUrl` and `refreshEndpoint` from `LibraryConfig` at request time
-
-```ts
-import { apiClient } from "@estedio/react";
-
-// Direct usage (advanced)
-const data = await apiClient.get<User[]>("/users");
-const created = await apiClient.post<User>("/users", { name: "Alice" });
-```
+- Resolving `apiBaseUrl` and `refreshEndpoint` from `LibraryConfig`
+- Adding the `Authorization` header unless `skipAuth` is set
+- Refreshing tokens on `401` once per request
+- Normalizing thrown errors into `NormalizedApiError`
 
 ### skipAuth
 
-Pass `{ skipAuth: true }` in the request config to bypass the auth header for a specific call:
-
 ```ts
-const data = await apiClient.get("/public/endpoint", undefined, {
-  skipAuth: true,
-});
+await apiClient.get("/public/health", undefined, { skipAuth: true });
 ```
-
-The `ResourceAdapter` sets `skipAuth: true` automatically for resources where `authenticated: false`.
 
 ### NormalizedApiError
 
-All errors thrown by `apiClient` are normalized into a consistent shape:
-
 ```ts
 interface NormalizedApiError {
-  status: number; // HTTP status code (0 for non-HTTP errors)
-  code: string; // Error code from API response or Axios error code
-  ray_id: string; // Tracing ID from API response (if present)
-  message: string; // Human-readable error message
+  status: number;
+  code: string;
+  ray_id: string;
+  message: string;
 }
 ```
 
+Use `normalizeError` and `isNormalizedApiError` from the root package when you need to align application-level error handling with the library runtime.
+
 ## RequestQueue
 
-`RequestQueue` deduplicates simultaneous requests to the same endpoint. If two components fire `dispatch({ resource: "GetUsers" })` at the same time, only one HTTP request is made — both components receive the same response.
+`RequestQueue` is specifically used during token refresh. If multiple authenticated requests fail with `401` while a refresh is already running, later requests wait for that refresh and retry after it succeeds.
 
-This happens transparently inside `apiClient`. You never need to configure or call `RequestQueue` directly.
+## Resource metadata used by the HTTP and state layers
 
-## ResourceConfig fields reference
-
-| Field                 | Type         | Required             | Description                           |
-| --------------------- | ------------ | -------------------- | ------------------------------------- |
-| `endpoint`            | `string`     | Yes                  | URL path, supports `:param` tokens    |
-| `method`              | `HttpMethod` | Yes                  | HTTP verb                             |
-| `authenticated`       | `boolean`    | No (default: `true`) | Attach auth header                    |
-| `sagaEffect`          | `SagaEffect` | No (Redux only)      | `"takeLatest"` or `"takeEvery"`       |
-| `meta.persist`        | `boolean`    | No                   | Persist response to storage           |
-| `meta.persistKey`     | `string`     | If `persist: true`   | Storage key for the response          |
-| `meta.isAuthResource` | `boolean`    | No                   | Auto-save tokens from response        |
-| `payload`             | `TPayload`   | No                   | Type-only marker, not used at runtime |
-| `response`            | `TResponse`  | No                   | Type-only marker, not used at runtime |
+| Field                 | Description                                        |
+| --------------------- | -------------------------------------------------- |
+| `authenticated`       | Controls whether the auth header is attached       |
+| `meta.persist`        | Enables persisted response storage                 |
+| `meta.persistKey`     | Storage key for persisted hydration                |
+| `meta.isAuthResource` | Saves `access_token` and `refresh_token` responses |
+| `sagaEffect`          | Redux-only watcher strategy                        |

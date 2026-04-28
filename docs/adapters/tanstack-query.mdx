@@ -1,6 +1,6 @@
 ---
 title: "TanStack Query Adapter"
-description: "Use @estedio/react with TanStack Query v5 for cache-first, server-state resource management."
+description: "Use @estedio/react with TanStack Query v5 for typed resource queries and mutations."
 ---
 
 ## Installation
@@ -11,40 +11,58 @@ npm install @estedio/react axios @tanstack/react-query
 
 ## Setup
 
-The TanStack Query adapter uses the existing `QueryClient` from your app. Wrap with `QueryClientProvider` as usual, then use the generated hooks.
+The TanStack Query adapter returns typed `useResourceQuery` and `useResourceMutation` hooks backed by your resource definitions.
 
-### 1. Create resources
+### 1. Create hooks
 
 ```ts
-// resources.ts
-import { createResources } from "@estedio/react/tanstack-query";
+import {
+  createStore,
+  localStorageAdapter,
+} from "@estedio/react/tanstack-query";
 import { resources } from "./resources";
 import type { ResourceTypeMap } from "./resources";
 
 export const { useResourceQuery, useResourceMutation } =
-  createResources<ResourceTypeMap>(resources);
+  createStore<ResourceTypeMap>(resources, {
+    storageByResource: {
+      GetUsers: localStorageAdapter,
+    },
+  });
 ```
 
-### 2. Add QueryClientProvider
+`createResources` and `createStore` are equivalent.
+
+### 2. Add a provider
+
+You can keep using your own `QueryClientProvider`, or use `TanstackProvider` to initialize both the `QueryClient` and the shared library config in one place.
 
 ```tsx
-// providers.tsx
 "use client";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+
+import type { ReactNode } from "react";
+import { QueryClient } from "@tanstack/react-query";
+import { TanstackProvider } from "@estedio/react/tanstack-query";
 
 const queryClient = new QueryClient();
 
-export function AppProvider({ children }: { children: React.ReactNode }) {
+export function AppProvider({ children }: { children: ReactNode }) {
   return (
-    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    <TanstackProvider
+      queryClient={queryClient}
+      provider={{ apiBaseUrl: "https://api.example.com" }}
+    >
+      {children}
+    </TanstackProvider>
   );
 }
 ```
 
-### 3. Fetch data with useResourceQuery
+### 3. Fetch data with `useResourceQuery`
 
 ```tsx
 "use client";
+
 import { useResourceQuery } from "./resources";
 
 export function UserList() {
@@ -66,10 +84,11 @@ export function UserList() {
 }
 ```
 
-### 4. Mutate data with useResourceMutation
+### 4. Mutate data with `useResourceMutation`
 
 ```tsx
 "use client";
+
 import { useResourceMutation } from "./resources";
 
 export function CreateUserButton() {
@@ -87,90 +106,29 @@ export function CreateUserButton() {
 }
 ```
 
-## useResourceQuery
+## Query behavior
 
-`useResourceQuery` wraps TanStack Query's `useQuery` and returns the standard `ResourceState<T>` shape:
+`useResourceQuery` accepts:
 
-```ts
-const { result, loading, error } = useResourceQuery({
-  resource: "GetUsers",
-  force: false,
-});
-```
+- `resource`
+- `payload`
+- `enabled`
+- `force`
+- `queryKey`
 
-| Option     | Type                            | Description                                      |
-| ---------- | ------------------------------- | ------------------------------------------------ |
-| `resource` | `keyof ResourceTypeMap`         | The resource name to fetch                       |
-| `force`    | `boolean`                       | `true` to bypass the query cache                 |
-| `payload`  | Inferred from `ResourceTypeMap` | Optional payload for path params or request body |
+When `force` is `false`, the hook sets `staleTime: Infinity` unless you override it, which makes the existing query cache behave like a durable resource hit.
 
-The returned `QueryResourceResult<T>` object:
+## Persistence and auth
 
-| Field     | Type             | Description                         |
-| --------- | ---------------- | ----------------------------------- |
-| `result`  | `T \| null`      | API response data                   |
-| `loading` | `boolean`        | `true` while the query is in flight |
-| `error`   | `string \| null` | Error message if the query failed   |
+The current implementation supports the same resource metadata used by the Redux and Zustand adapters:
 
-## useResourceMutation
-
-`useResourceMutation` wraps TanStack Query's `useMutation` and returns a `dispatch` function with the standard `ResourceState<T>` shape:
-
-```ts
-const { dispatch, result, loading, error } = useResourceMutation("CreateUser");
-```
-
-The returned `MutationResourceResult<T>` object:
-
-| Field      | Type                          | Description                            |
-| ---------- | ----------------------------- | -------------------------------------- |
-| `dispatch` | `(payload: TPayload) => void` | Triggers the mutation                  |
-| `result`   | `T \| null`                   | Last successful mutation response      |
-| `loading`  | `boolean`                     | `true` while the mutation is in flight |
-| `error`    | `string \| null`              | Error message if the mutation failed   |
-
-## Using both in the same component
-
-```tsx
-"use client";
-import { useResourceQuery, useResourceMutation } from "./resources";
-
-export function UsersPage() {
-  const {
-    result: users,
-    loading,
-    error,
-  } = useResourceQuery({
-    resource: "GetUsers",
-    force: false,
-  });
-  const createUser = useResourceMutation("CreateUser");
-
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p>Error: {error}</p>;
-
-  return (
-    <>
-      <button
-        onClick={() =>
-          createUser.dispatch({ name: "Bob", email: "bob@example.com" })
-        }
-      >
-        Add user
-      </button>
-      <ul>
-        {users?.map((u) => (
-          <li key={u.id}>{u.name}</li>
-        ))}
-      </ul>
-    </>
-  );
-}
-```
+- `meta.persist` and `meta.persistKey` hydrate the query cache from encrypted storage
+- `meta.isAuthResource` saves auth token responses through the shared token manager
+- `sagaEffect` is still ignored because it is Redux-specific
 
 ## Path parameters
 
-The adapter uses the same path-param interpolation as all other adapters. Pass `userId` in the payload for an endpoint like `/users/:userId`:
+Path parameter interpolation works the same as every other adapter:
 
 ```ts
 const { result } = useResourceQuery({
@@ -179,9 +137,3 @@ const { result } = useResourceQuery({
   force: false,
 });
 ```
-
-## Notes
-
-- The TanStack Query adapter does **not** support `meta.persist` — use TanStack Query's built-in `staleTime` and `gcTime` for caching control.
-- Auth token auto-save (`meta.isAuthResource`) is not available in this adapter. Use the Redux or Zustand adapters for auth flows.
-- `sagaEffect` is a Redux-only field and is ignored by this adapter.

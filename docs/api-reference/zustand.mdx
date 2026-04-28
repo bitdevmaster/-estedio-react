@@ -1,14 +1,16 @@
 ---
 title: "Zustand API Reference"
-description: "Full reference for all exports from @estedio/react/zustand."
+description: "Reference for the Zustand adapter exports from @estedio/react/zustand."
 ---
 
 <Note>
-  All [Core exports](/api-reference/core) — config helpers, entity types, ports,
-  HTTP, and storage — are also re-exported from `@estedio/react/zustand`.
+  All [Core exports](/api-reference/core) are also re-exported from
+  `@estedio/react/zustand`.
 </Note>
 
-## createResources
+## Main factories
+
+### createResources
 
 ```ts
 function createResources<TResourceMap>(
@@ -19,111 +21,72 @@ function createResources<TResourceMap>(
 };
 ```
 
-The main factory function for the Zustand adapter. Creates one Zustand store per resource.
+### createStore
+
+Alias of `createResources`.
 
 ### CreateResourcesOptions
 
 ```ts
 interface CreateResourcesOptions {
+  apiPort?: IApiPort;
   storageByResource?: Partial<Record<string, IStoragePort>>;
 }
 ```
 
-| Option              | Description                                                      |
-| ------------------- | ---------------------------------------------------------------- |
-| `storageByResource` | Map resource names to a storage adapter for response persistence |
+## Provider
 
----
+### ZustandProvider
 
-## createResourceHooks
+Optional wrapper that initializes shared library config once and renders its children unchanged.
+
+## Hooks
+
+### createResourceHooks
+
+Creates typed `useResourceDispatch` and `useResourceSelector` hooks from the generated stores map.
+
+### createHooks
+
+Alias of `createResourceHooks`.
+
+### useResourceDispatch
 
 ```ts
-function createResourceHooks<TResourceMap>(
-  stores: ResourceStoresFromTypeMap<TResourceMap>,
-): {
-  useResourceDispatch: () => ResourceDispatchFn<TResourceMap>;
-  useResourceSelector: <K extends keyof TResourceMap>(
-    resource: K,
-  ) => ResourceState<TResourceMap[K]["response"]>;
-};
+const dispatch = useResourceDispatch();
+dispatch({ resource: "GetUsers", force: false });
+dispatch({ resource: "GetUserById" }, { userId: 42 });
 ```
 
-Generates typed `useResourceDispatch` and `useResourceSelector` hooks bound to your `ResourceTypeMap`.
-
----
-
-## useResourceSelector
-
-Returns the current `ResourceState` for a named resource from its Zustand store:
+### useResourceSelector
 
 ```ts
 const { result, loading, error } = useResourceSelector("GetUsers");
 ```
 
----
+## Low-level exports
 
-## useResourceDispatch
+### createResourceStore
 
-Returns a typed dispatch function:
-
-```ts
-const dispatch = useResourceDispatch();
-dispatch({ resource: "GetUsers", force: false });
-dispatch({ resource: "GetUserById", payload: { userId: 42 } });
-```
-
-### ResourceDispatchParams
-
-```ts
-interface ResourceDispatchParams<TResourceMap, K extends keyof TResourceMap> {
-  resource: K;
-  payload?: TResourceMap[K]["payload"];
-  force?: boolean;
-}
-```
-
----
-
-## createResourceStore
-
-```ts
-function createResourceStore(
-  resourceName: string,
-  config: ResourceConfig,
-  adapter: IApiPort,
-  storage?: IStoragePort,
-): StoreApi<ResourceStoreState>;
-```
-
-Low-level factory for creating a single Zustand store for a resource. Used internally by `createResources`.
+Creates one vanilla Zustand store per resource and applies shared cache, auth-token, and persistence behavior.
 
 ### ResourceStoreState
 
-```ts
-interface ResourceStoreState<T = unknown> extends ResourceState<T> {
-  dispatch: (params: { payload?: unknown; force?: boolean }) => Promise<void>;
-}
-```
+Includes:
 
----
+- `result`
+- `error`
+- `loading`
+- `fetch`
+- `clearResult`
+- `reset`
 
 ## Types
 
 ### ResourceStoresFromTypeMap
 
-Infers the stores map type from your resource type map:
-
-```ts
-import type { ResourceStoresFromTypeMap } from "@estedio/react/zustand";
-import type { ResourceTypeMap } from "./resources";
-
-type AppStores = ResourceStoresFromTypeMap<ResourceTypeMap>;
-```
+Infers the generated stores map from your resource type map.
 
 ### FetchCallback
 
-Internal async fetch function type used inside each store:
-
-```ts
-type FetchCallback = (payload?: unknown) => Promise<unknown>;
-```
+Shared callback signature used by store fetch operations.

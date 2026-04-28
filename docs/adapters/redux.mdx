@@ -109,13 +109,13 @@ For resources that require a payload (e.g. path params or request body), pass th
 
 ```ts
 // GET /users/:userId
-dispatch({ resource: "GetUserById", payload: { userId: 42 } });
+dispatch({ resource: "GetUserById" }, { userId: 42 });
 
 // POST /users
-dispatch({
-  resource: "CreateUser",
-  payload: { name: "Alice", email: "alice@example.com" },
-});
+dispatch(
+  { resource: "CreateUser" },
+  { name: "Alice", email: "alice@example.com" },
+);
 ```
 
 ## force flag

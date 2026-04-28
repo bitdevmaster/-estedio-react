@@ -9,34 +9,29 @@ and this project follows Semantic Versioning.
 
 ### Added
 
-- Added resource adapters for Zustand and TanStack Query.
-- Added adapter-specific package entry points:
-  - @estedio/react/redux
-  - @estedio/react/zustand
-  - @estedio/react/tanstack-query
-- Added updated README documentation for adapter-first usage.
-- Added master architecture reference for @estedio/react as source-of-truth implementation.
-- Added cross-framework architecture blueprint for React and Vue adapter strategy.
-- Added non-breaking improvement catalog and future major version improvement classification.
-- Added Estedio engineering standards guide including 200-line file governance rule.
-- Added Mintlify documentation scaffold (mintlify.json + docs sections).
-- Added AI skill templates for core library and UI library development workflows.
-- Added release/versioning workflow documentation based on Keep a Changelog + SemVer.
-- Added Vue (Nuxt) migration blueprint for behavior-preserving implementation.
-- Added GitHub issue templates for bug reports and feature requests.
+- Added `ZustandProvider` and `TanstackProvider` for adapter-level config initialization.
+- Added `createStore` and `createHooks` aliases for a more consistent cross-adapter API.
+- Added `ReduxResourceConfig`, `assembleReduxStore`, and shared core type barrels for adapter internals.
+- Added `NormalizedApiError` to the core domain plus root-level `normalizeError` and `isNormalizedApiError` exports.
+- Added shared state behavior modules for cache skipping, auth token persistence, and persisted result hydration.
 
 ### Changed
 
-- Updated dataProvider mapping keys to use:
-  - access_token_key
-  - refresh_token_key
-- Kept access_token and refresh_token as backward-compatible aliases.
-- Updated docs/examples to use adapter-specific imports.
+- Updated TanStack Query to accept `storageByResource` and hydrate persisted query results.
+- Updated adapter entry points to expose the new provider helpers, aliases, and shared error types.
+- Updated README and Mintlify docs to reflect the current adapter APIs and runtime behavior.
 
 ### Fixed
 
 - Fixed Redux resource cache check behavior for non-null falsy results.
-- Added persisted resource hydration flow for Redux resource state.
+- Fixed Redux persisted resource hydration so cached responses are restored into slice state on store creation.
+- Fixed documentation drift around TanStack Query persistence, provider support, and HTTP request queue behavior.
+
+### Refactored
+
+- Refactored Redux store assembly into a dedicated factory helper.
+- Refactored all three adapters to share auth-token and persistence behavior instead of duplicating that logic.
+- Refactored the normalized error type out of the HTTP layer into the core domain.
 
 ## [0.1.1] - 2026-04-09
 

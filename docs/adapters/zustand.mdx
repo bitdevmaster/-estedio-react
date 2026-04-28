@@ -1,6 +1,6 @@
 ---
 title: "Zustand Adapter"
-description: "Use @estedio/react with Zustand for lightweight, zero-provider resource stores."
+description: "Use @estedio/react with Zustand for lightweight, typed per-resource stores."
 ---
 
 ## Installation
@@ -11,39 +11,57 @@ npm install @estedio/react axios zustand
 
 ## Setup
 
-The Zustand adapter requires no provider — just create resources, generate hooks, and use them.
+The Zustand adapter creates one vanilla Zustand store per resource and exposes typed dispatch/selector hooks.
 
-### 1. Create resources and hooks
+### 1. Create stores and hooks
 
 ```ts
-// store.ts
 "use client";
+
 import {
-  createResources,
-  createResourceHooks,
+  createStore,
+  createHooks,
   localStorageAdapter,
 } from "@estedio/react/zustand";
 import { resources } from "./resources";
 import type { ResourceTypeMap } from "./resources";
 
-const { stores } = createResources<ResourceTypeMap>(resources, {
+const { stores } = createStore<ResourceTypeMap>(resources, {
   storageByResource: {
     GetUsers: localStorageAdapter,
   },
 });
 
 export const { useResourceDispatch, useResourceSelector } =
-  createResourceHooks<ResourceTypeMap>(stores);
+  createHooks<ResourceTypeMap>(stores);
 ```
 
-`createResources` returns:
+`createResources` and `createStore` are equivalent. `createResourceHooks` and `createHooks` are equivalent.
 
-- **`stores`** — a map of Zustand stores, one per resource (passed to `createResourceHooks`)
+### 2. Optional provider
 
-### 2. Use in components
+`ZustandProvider` is optional. It does not create context state, but it does let you initialize shared library config in the same pattern as the Redux and TanStack adapters.
 
 ```tsx
 "use client";
+
+import type { ReactNode } from "react";
+import { ZustandProvider } from "@estedio/react/zustand";
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  return (
+    <ZustandProvider provider={{ apiBaseUrl: "https://api.example.com" }}>
+      {children}
+    </ZustandProvider>
+  );
+}
+```
+
+### 3. Use in components
+
+```tsx
+"use client";
+
 import { useResourceDispatch, useResourceSelector } from "./store";
 
 export function UserList() {
@@ -67,36 +85,29 @@ export function UserList() {
 }
 ```
 
-## Dispatching with payload
+## Dispatching payloads and callbacks
 
 ```ts
-// Path param
-dispatch({ resource: "GetUserById", payload: { userId: 42 } });
+dispatch({ resource: "GetUserById" }, { userId: 42 });
 
-// Request body
-dispatch({
-  resource: "CreateUser",
-  payload: { name: "Alice", email: "alice@example.com" },
-});
+dispatch(
+  { resource: "CreateUser" },
+  { name: "Alice", email: "alice@example.com" },
+  (result, error) => {
+    console.log(result, error);
+  },
+);
 ```
 
-## force flag
+## Cache and persistence behavior
 
-| Value   | Behaviour                                               |
-| ------- | ------------------------------------------------------- |
-| `false` | Skip the fetch if a non-null result exists in the store |
-| `true`  | Always fetch, even if a result exists                   |
-
-```ts
-dispatch({ resource: "GetUsers", force: true });
-```
-
-## Persistence
-
-Pass a storage adapter per resource in `storageByResource`:
+- `force: true` always fetches
+- `force: false` skips the request when a non-null result already exists
+- `meta.persist` and `meta.persistKey` enable encrypted persisted hydration
+- `meta.isAuthResource` saves `access_token` and `refresh_token` responses through the shared token manager
 
 ```ts
-const { stores } = createResources<ResourceTypeMap>(resources, {
+const { stores } = createStore<ResourceTypeMap>(resources, {
   storageByResource: {
     GetUsers: localStorageAdapter,
     GetProfile: sessionStorageAdapter,
@@ -104,21 +115,7 @@ const { stores } = createResources<ResourceTypeMap>(resources, {
 });
 ```
 
-The persisted value is rehydrated into the Zustand store on the first render.
-
-## No provider required
-
-Unlike the Redux adapter, the Zustand adapter does not require a React context provider. Each resource is backed by its own independent Zustand store and can be used anywhere in the component tree without wrapping.
-
-<Note>
-  If you use the `force: false` cache check across multiple components, they
-  share the same Zustand store instance, so results are automatically
-  synchronized.
-</Note>
-
-## Advanced: ResourceStoresFromTypeMap
-
-For typing the `stores` map outside of the factory function:
+## Advanced types
 
 ```ts
 import type { ResourceStoresFromTypeMap } from "@estedio/react/zustand";

@@ -1,50 +1,55 @@
 # @estedio/react
 
-Reusable hexagonal architecture utilities for resource-based data flows in React apps.
+Hexagonal resource primitives for React applications, with first-class adapters for Redux, Zustand, and TanStack Query.
 
-The package now ships adapter-specific entry points:
+## Overview
+
+`@estedio/react` lets you define API resources once and plug them into the state library your app already uses. Each adapter exposes the same `ResourceState<T>` shape, shares the same HTTP and token-management runtime, and supports typed payload/response contracts.
+
+Adapter entry points:
 
 - `@estedio/react/redux`
 - `@estedio/react/zustand`
 - `@estedio/react/tanstack-query`
 
-Use these paths directly for adapter features.
+## Features
+
+- Typed resource definitions with shared `ResourceConfig` and `ResourceState`
+- Redux Toolkit + Redux Saga adapter for orchestrated async flows
+- Zustand adapter for lightweight per-resource stores
+- TanStack Query adapter for query/mutation-driven server state
+- Shared auth token handling and 401 refresh flow
+- Optional persisted resource hydration through encrypted storage adapters
+- Provider helpers for all three adapters
+- Shared error utilities via `NormalizedApiError`, `normalizeError`, and `isNormalizedApiError`
 
 ## Installation
 
-Install the package and the adapter dependencies you use.
+Install the core package plus `axios`:
 
 ```bash
 npm install @estedio/react axios
 ```
 
-### Redux adapter dependencies
+Then install the peer dependencies for the adapter you use:
 
 ```bash
 npm install @reduxjs/toolkit react-redux redux-saga
 ```
 
-### Zustand adapter dependencies
-
 ```bash
 npm install zustand
 ```
-
-### TanStack Query adapter dependencies
 
 ```bash
 npm install @tanstack/react-query
 ```
 
-## Shared Configuration
+Node.js `18+` is required.
 
-All adapters export the same config helpers:
+## Configuration
 
-- `initializeLibConfig`
-- `getLibConfig`
-- `dataProvider`
-
-### Runtime setup
+Initialize the shared runtime once before fetching resources:
 
 ```ts
 import { initializeLibConfig } from "@estedio/react/redux";
@@ -58,33 +63,23 @@ initializeLibConfig({
 });
 ```
 
-### dataProvider (snake_case mapping)
+You can also map snake_case values with `dataProvider`:
 
 ```ts
 import { dataProvider, initializeLibConfig } from "@estedio/react/redux";
 
-const providerConfig = dataProvider({
-  base_url: "https://api.example.com",
-  refresh_endpoint: "/auth/refresh",
-  access_token_key: "access_token",
-  refresh_token_key: "refresh_token",
-  storage_secret: "replace-this-in-production",
-});
-
-initializeLibConfig(providerConfig);
+initializeLibConfig(
+  dataProvider({
+    base_url: "https://api.example.com",
+    refresh_endpoint: "/auth/refresh",
+    access_token_key: "access_token",
+    refresh_token_key: "refresh_token",
+    storage_secret: "replace-this-in-production",
+  }),
+);
 ```
 
-`dataProvider` maps only:
-
-- `base_url`
-- `refresh_endpoint`
-- `access_token_key` (or deprecated `access_token`)
-- `refresh_token_key` (or deprecated `refresh_token`)
-- `storage_secret`
-
-Note: `node_env` is intentionally not part of `dataProvider`.
-
-## Resource Definition
+## Defining Resources
 
 ```ts
 import type { ResourceConfig } from "@estedio/react/redux";
@@ -105,6 +100,10 @@ export const resources = {
     authenticated: true,
     payload: {} as void,
     response: {} as User[],
+    meta: {
+      persist: true,
+      persistKey: "users_cache",
+    },
   },
   GetUserById: {
     endpoint: "/users/:userId",
@@ -123,22 +122,28 @@ export const resources = {
 } satisfies Record<keyof ResourceTypeMap, ResourceConfig>;
 ```
 
-## Redux Usage
+## Usage
 
-### 1) Create resources/store
+### Redux
 
 ```ts
-import { createResources, localStorageAdapter } from "@estedio/react/redux";
+import {
+  createResources,
+  createHooks,
+  localStorageAdapter,
+} from "@estedio/react/redux";
 import { resources } from "./resources";
+import type { ResourceTypeMap } from "./resources";
 
 export const { makeStore, slices } = createResources(resources, {
   storageByResource: {
     GetUsers: localStorageAdapter,
   },
 });
-```
 
-### 2) Provider
+export const { useResourceDispatch, useResourceSelector } =
+  createHooks<ResourceTypeMap>(slices);
+```
 
 ```tsx
 "use client";
@@ -148,205 +153,132 @@ import { StoreProvider } from "@estedio/react/redux";
 import { makeStore } from "./store";
 
 export function AppProvider({ children }: { children: ReactNode }) {
-  return (
-    <StoreProvider
-      makeStore={makeStore}
-      provider={{ apiBaseUrl: "https://api.example.com" }}
-    >
-      {children}
-    </StoreProvider>
-  );
+  return <StoreProvider makeStore={makeStore}>{children}</StoreProvider>;
 }
 ```
 
-### 3) Typed hooks
+### Zustand
 
 ```ts
-"use client";
-
-import { createResourceHooks } from "@estedio/react/redux";
-import { slices } from "./store";
-import type { ResourceTypeMap } from "./resources";
-
-export const { useResourceDispatch, useResourceSelector } =
-  createResourceHooks<ResourceTypeMap>(slices);
-```
-
-### 4) Dispatch/select
-
-```tsx
-const dispatch = useResourceDispatch();
-const { result, loading, error } = useResourceSelector("GetUsers");
-
-dispatch({ resource: "GetUsers", force: false });
-```
-
-## Zustand Usage
-
-```ts
-"use client";
-
 import {
-  createResources,
-  createResourceHooks,
+  createStore,
+  createHooks,
   localStorageAdapter,
 } from "@estedio/react/zustand";
 import { resources } from "./resources";
 import type { ResourceTypeMap } from "./resources";
 
-const { stores } = createResources<ResourceTypeMap>(resources, {
+const { stores } = createStore<ResourceTypeMap>(resources, {
   storageByResource: {
     GetUsers: localStorageAdapter,
   },
 });
 
 export const { useResourceDispatch, useResourceSelector } =
-  createResourceHooks<ResourceTypeMap>(stores);
-
-// usage:
-// const dispatch = useResourceDispatch();
-// dispatch({ resource: "GetUsers", force: false });
-// const state = useResourceSelector("GetUsers");
+  createHooks<ResourceTypeMap>(stores);
 ```
-
-## TanStack Query Usage
 
 ```tsx
 "use client";
 
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { createResources } from "@estedio/react/tanstack-query";
+import type { ReactNode } from "react";
+import { ZustandProvider } from "@estedio/react/zustand";
+
+export function AppProvider({ children }: { children: ReactNode }) {
+  return <ZustandProvider>{children}</ZustandProvider>;
+}
+```
+
+### TanStack Query
+
+```tsx
+"use client";
+
+import { QueryClient } from "@tanstack/react-query";
+import {
+  createResources,
+  TanstackProvider,
+  localStorageAdapter,
+} from "@estedio/react/tanstack-query";
 import { resources } from "./resources";
 import type { ResourceTypeMap } from "./resources";
 
 const queryClient = new QueryClient();
-const { useResourceQuery, useResourceMutation } =
-  createResources<ResourceTypeMap>(resources);
 
-function Users() {
-  const { result, loading, error } = useResourceQuery({
-    resource: "GetUsers",
-    force: false,
+export const { useResourceQuery, useResourceMutation } =
+  createResources<ResourceTypeMap>(resources, {
+    storageByResource: {
+      GetUsers: localStorageAdapter,
+    },
   });
 
-  const createUser = useResourceMutation("CreateUser");
-
-  if (loading) return <div>Loading...</div>;
-  if (error) return <div>{error}</div>;
-
+export function AppProvider({ children }: { children: React.ReactNode }) {
   return (
-    <button
-      onClick={() => {
-        createUser.dispatch({ name: "John", email: "john@example.com" });
-      }}
-    >
-      Create user
-    </button>
-  );
-}
-
-export function App() {
-  return (
-    <QueryClientProvider client={queryClient}>
-      <Users />
-    </QueryClientProvider>
+    <TanstackProvider queryClient={queryClient}>{children}</TanstackProvider>
   );
 }
 ```
 
-## API Highlights
+## Common Interaction Patterns
 
-### ResourceState
-
-```ts
-type ResourceState<T> = {
-  result: T | null;
-  error: string | null;
-  loading: boolean;
-};
+```tsx
+const dispatch = useResourceDispatch();
+dispatch({ resource: "GetUsers", force: false });
+dispatch({ resource: "GetUserById", force: true }, { userId: 42 });
 ```
 
-### ResourceConfig fields
+```tsx
+const { result, loading, error } = useResourceQuery({
+  resource: "GetUsers",
+  force: false,
+});
 
-- `endpoint`
-- `method`: `"GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "MULTIPART"`
-- `authenticated`
-- `meta.persist`
-- `meta.persistKey`
-- `meta.isAuthResource`
-- `payload` (type marker)
-- `response` (type marker)
-- `sagaEffect` (Redux adapter behavior)
+const createUser = useResourceMutation("CreateUser");
+createUser.dispatch({ name: "Alice", email: "alice@example.com" });
+```
 
-### Path params
+`force: false` skips the request when a non-null cached result already exists.
 
-`ResourceAdapter` interpolates endpoint params from payload:
+## Export Highlights
 
-- endpoint: `/users/:userId/posts/:postId`
-- payload: `{ userId: 7, postId: 25, includeComments: true }`
-- request URL: `/users/7/posts/25`
-- forwarded payload: `{ includeComments: true }`
+### Root package
 
-## Exports
+- Core entities and ports
+- Config helpers
+- HTTP and storage runtime exports
+- `normalizeError`
+- `isNormalizedApiError`
 
-### `@estedio/react`
-
-Core/shared exports only:
-
-- core entities and ports
-- config helpers
-- HTTP runtime exports
-- storage exports
-
-### `@estedio/react/redux`
+### Adapter packages
 
 - `createResources`
-- `StoreProvider`
-- `createResourceHooks`
-- `useResourceSelector`
-- `createResourceSlice`
-- `createResourceSaga`
-- `RootStateFromResources`
-- `FetchPayload`
-- shared config/adapters/types
+- `createStore` alias
+- `createHooks` alias
+- Provider components
+- Storage adapters
+- Token manager exports
+- Adapter-specific factory types
 
-### `@estedio/react/zustand`
+## Documentation
 
-- `createResources`
-- `createResourceHooks`
-- `createResourceStore`
-- `ResourceStoresFromTypeMap`
-- `ResourceDispatchParams`
-- shared config/adapters/types
-
-### `@estedio/react/tanstack-query`
-
-- `createResources`
-- `createResourceHooks`
-- `TanstackResourceHooks`
-- `QueryResourceResult`
-- `MutationResourceResult`
-- shared config/adapters/types
+- [Introduction](./docs/index.mdx)
+- [Quickstart](./docs/quickstart.mdx)
+- [Configuration](./docs/configuration.mdx)
+- [Adapter overview](./docs/adapters/overview.mdx)
+- [Redux guide](./docs/adapters/redux.mdx)
+- [Zustand guide](./docs/adapters/zustand.mdx)
+- [TanStack Query guide](./docs/adapters/tanstack-query.mdx)
+- [Core API reference](./docs/api-reference/core.mdx)
 
 ## Migration Notes
 
-If you previously imported from legacy paths:
+Legacy import paths remain exported:
 
 - `@estedio/react/store`
 - `@estedio/react/hooks`
 
-switch to adapter-specific paths instead:
-
-- `@estedio/react/redux`
-- `@estedio/react/zustand`
-- `@estedio/react/tanstack-query`
+New code should prefer the adapter entry points directly.
 
 ## Security
 
-For reporting vulnerabilities and security policies, see [SECURITY.md](./SECURITY.md).
-
-Key points:
-
-- Report security issues privately via GitHub Security Advisories.
-- Tokens and secrets should use strong encryption and best-practice storage patterns.
-- Keep all dependencies updated regularly.
+See [SECURITY.md](./SECURITY.md) for vulnerability reporting guidance.

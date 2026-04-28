@@ -1,148 +1,98 @@
 ---
 title: "TanStack Query API Reference"
-description: "Full reference for all exports from @estedio/react/tanstack-query."
+description: "Reference for the TanStack Query adapter exports from @estedio/react/tanstack-query."
 ---
 
 <Note>
-  All [Core exports](/api-reference/core) — config helpers, entity types, ports,
-  HTTP, and storage — are also re-exported from `@estedio/react/tanstack-query`.
+  All [Core exports](/api-reference/core) are also re-exported from
+  `@estedio/react/tanstack-query`.
 </Note>
 
-## createResources
+## Main factories
+
+### createResources
 
 ```ts
 function createResources<TResourceMap>(
   resources: Record<keyof TResourceMap, ResourceConfig>,
+  options?: CreateResourcesOptions,
 ): TanstackResourceHooks<TResourceMap>;
 ```
 
-The main factory function for the TanStack Query adapter. Returns `useResourceQuery` and `useResourceMutation` hooks typed to your `ResourceTypeMap`.
+### createStore
 
-No `options` parameter — cache control is handled by the `QueryClient` you provide.
+Alias of `createResources`.
 
----
-
-## createResourceHooks
+### CreateResourcesOptions
 
 ```ts
-function createResourceHooks<TResourceMap>(
-  resources: Record<keyof TResourceMap, ResourceConfig>,
-): TanstackResourceHooks<TResourceMap>;
-```
-
-Alias of `createResources`. Both functions are identical.
-
----
-
-## useResourceQuery
-
-```ts
-function useResourceQuery<K extends keyof TResourceMap>(params: {
-  resource: K;
-  payload?: TResourceMap[K]["payload"];
-  force?: boolean;
-}): QueryResourceResult<TResourceMap[K]["response"]>;
-```
-
-Executes a GET-style resource as a TanStack Query `useQuery` call.
-
-```ts
-const { result, loading, error } = useResourceQuery({
-  resource: "GetUsers",
-  force: false,
-});
-```
-
-### QueryResourceResult
-
-```ts
-interface QueryResourceResult<T> {
-  result: T | null;
-  loading: boolean;
-  error: string | null;
+interface CreateResourcesOptions {
+  apiPort?: IApiPort;
+  storageByResource?: Partial<Record<string, IStoragePort>>;
 }
 ```
 
-| Field     | Type             | Description                               |
-| --------- | ---------------- | ----------------------------------------- |
-| `result`  | `T \| null`      | API response data when the query succeeds |
-| `loading` | `boolean`        | `true` while the query is in-flight       |
-| `error`   | `string \| null` | Error message if the query failed         |
+## Provider
 
----
+### TanstackProvider
 
-## useResourceMutation
+Wraps `QueryClientProvider` and optionally calls `initializeLibConfig` on first render.
+
+## Hook factories
+
+### createResourceHooks
+
+Low-level factory used by `createResources` to build typed hooks from a resource registry and adapter dependencies.
+
+### createHooks
+
+Alias of `createResourceHooks`.
+
+## Hooks
+
+### useResourceQuery
+
+Accepts:
+
+- `resource`
+- `payload`
+- `enabled`
+- `force`
+- `queryKey`
+
+Returns the normal `ResourceState<T>` shape plus the underlying TanStack Query result fields.
+
+### useResourceMutation
+
+Returns the mutation result plus:
 
 ```ts
-function useResourceMutation<K extends keyof TResourceMap>(
-  resource: K,
-): MutationResourceResult<
-  TResourceMap[K]["payload"],
-  TResourceMap[K]["response"]
->;
+dispatch(
+  payloadOrCallback?: TPayload | FetchCallback<TResponse>,
+  callbackArg?: FetchCallback<TResponse>,
+): void;
 ```
-
-Wraps a resource as a TanStack Query `useMutation` call.
-
-```ts
-const createUser = useResourceMutation("CreateUser");
-createUser.dispatch({ name: "Alice", email: "alice@example.com" });
-```
-
-### MutationResourceResult
-
-```ts
-interface MutationResourceResult<TPayload, TResponse> {
-  dispatch: (payload: TPayload) => void;
-  result: TResponse | null;
-  loading: boolean;
-  error: string | null;
-}
-```
-
-| Field      | Type                          | Description                            |
-| ---------- | ----------------------------- | -------------------------------------- |
-| `dispatch` | `(payload: TPayload) => void` | Triggers the mutation                  |
-| `result`   | `TResponse \| null`           | Last successful mutation response      |
-| `loading`  | `boolean`                     | `true` while the mutation is in-flight |
-| `error`    | `string \| null`              | Error message if the mutation failed   |
-
----
 
 ## Types
 
 ### TanstackResourceHooks
 
-```ts
-interface TanstackResourceHooks<TResourceMap> {
-  useResourceQuery: <K extends keyof TResourceMap>(params: {
-    resource: K;
-    payload?: TResourceMap[K]["payload"];
-    force?: boolean;
-  }) => QueryResourceResult<TResourceMap[K]["response"]>;
+Typed container for `useResourceQuery` and `useResourceMutation`.
 
-  useResourceMutation: <K extends keyof TResourceMap>(
-    resource: K,
-  ) => MutationResourceResult<
-    TResourceMap[K]["payload"],
-    TResourceMap[K]["response"]
-  >;
-}
-```
+### QueryResourceResult
+
+TanStack Query `UseQueryResult` merged with `ResourceState<T>`.
+
+### MutationResourceResult
+
+TanStack Query `UseMutationResult` merged with `ResourceState<T>` and `dispatch`.
 
 ### FetchCallback
 
-Internal async fetch function type:
+Shared callback signature used by query and mutation dispatch flows.
 
-```ts
-type FetchCallback = (payload?: unknown) => Promise<unknown>;
-```
+## Behavior notes
 
----
-
-## Notes
-
-- `meta.persist` and `meta.isAuthResource` are **not** supported by this adapter.
-- `sagaEffect` is a Redux-only field and is ignored.
-- For caching, configure `staleTime` and `gcTime` on the `QueryClient` directly.
-- You must wrap your tree with `QueryClientProvider` from `@tanstack/react-query`.
+- `meta.persist` and `meta.persistKey` hydrate the query cache from encrypted storage
+- `meta.isAuthResource` persists token responses with the shared token manager
+- `sagaEffect` is ignored because it is Redux-specific
